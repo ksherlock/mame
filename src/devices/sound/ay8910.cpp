@@ -582,12 +582,18 @@ YM2203 Japanese datasheet contents, translated: http://www.larwe.com/technical/c
 */
 
 #include "emu.h"
+#include "vgmwrite.h"
 #include "ay8910.h"
 
 #define LOG_IGNORED_WRITES (1U << 1)
 #define LOG_WARNINGS       (1U << 2)
 #define VERBOSE (LOG_WARNINGS)
 #include "logmacro.h"
+
+extern const device_type YM2203;
+extern const device_type YM2608;
+extern const device_type YM2610;
+extern const device_type YM2610B;
 
 /*************************************
  *
@@ -931,6 +937,8 @@ stream_buffer::sample_t ay8910_device::mix_3D()
 
 void ay8910_device::ay8910_write_reg(int r, int v)
 {
+	vgm_write(m_vgm_idx, 0x00, r, v);
+
 	if ((r & 0xf) == AY_EASHAPE) // shared register
 		r &= 0xf;
 
@@ -1303,6 +1311,7 @@ void ay8910_device::ay8910_statesave()
 void ay8910_device::device_start()
 {
 	const int master_clock = clock();
+	uint8_t chp_tp_vgm;
 
 	if (m_ioports < 1 && !(m_port_a_read_cb.isnull() && m_port_a_write_cb.isnull()))
 		fatalerror("Device '%s' is a %s and has no port A!", tag(), name());
@@ -1331,6 +1340,34 @@ void ay8910_device::device_start()
 
 	ay_set_clock(master_clock);
 	ay8910_statesave();
+
+	if (type() == AY8910) chp_tp_vgm = 0x00;
+	else if (type() == AY8912) chp_tp_vgm = 0x01;
+	else if (type() == AY8913) chp_tp_vgm = 0x02;
+	else if (type() == AY8930) chp_tp_vgm = 0x03;
+	else if (type() == AY8914) chp_tp_vgm = 0x04;
+	else if (type() == YM2149) chp_tp_vgm = 0x10;
+	else if (type() == YM3439) chp_tp_vgm = 0x11;
+	else if (type() == YMZ284) chp_tp_vgm = 0x12;
+	else if (type() == YMZ294) chp_tp_vgm = 0x13;
+	else if (type() == YM2203) chp_tp_vgm = 0x20;
+	else if (type() == YM2608) chp_tp_vgm = 0x21;
+	else if (type() == YM2610 || type() == YM2610B) chp_tp_vgm = 0x22;
+	else chp_tp_vgm = 0xFF;
+ 
+	if (! (chp_tp_vgm & 0x20))
+	{
+		m_vgm_idx = vgm_open(VGMC_AY8910, clock());
+		vgm_header_set(m_vgm_idx, 0x00, chp_tp_vgm);
+		vgm_header_set(m_vgm_idx, 0x01, m_flags);
+		vgm_header_set(m_vgm_idx, 0x10, m_res_load[0]);
+		vgm_header_set(m_vgm_idx, 0x11, m_res_load[1]);
+		vgm_header_set(m_vgm_idx, 0x12, m_res_load[2]);
+	}
+	else
+	{
+		m_vgm_idx = 0xFFFF;
+	}
 }
 
 
