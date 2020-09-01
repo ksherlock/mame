@@ -334,6 +334,7 @@ private:
 	devcb_read8 m_port_b_read_cb;
 	devcb_write8 m_port_a_write_cb;
 	devcb_write8 m_port_b_write_cb;
+	uint16_t m_vgm_idx; /* VGM index */
 };
 
 DECLARE_DEVICE_TYPE(AY8910, ay8910_device)
