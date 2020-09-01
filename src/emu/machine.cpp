@@ -86,6 +86,7 @@
 #include "tilemap.h"
 #include "natkeyboard.h"
 #include "ui/uimain.h"
+#include "vgmwrite.h"
 #include <ctime>
 #include <rapidjson/writer.h>
 #include <rapidjson/stringbuffer.h>
@@ -258,6 +259,9 @@ void running_machine::start()
 	// resolve objects that are created by memory maps
 	for (device_t &device : device_enumerator(root_device()))
 		device.resolve_post_map();
+
+	// call the Initialisation for VGM logging (MUST be called before driver init)
+	vgm_start(*this);
 
 	// register callbacks for the devices, then start them
 	add_notifier(MACHINE_NOTIFY_RESET, machine_notify_delegate(&running_machine::reset_all_devices, this));
@@ -1114,6 +1118,9 @@ void running_machine::stop_all_devices()
 	// iterate over devices and stop them
 	for (device_t &device : device_enumerator(root_device()))
 		device.stop();
+
+	// stop VGM logging
+	vgm_stop();
 }
 
 
