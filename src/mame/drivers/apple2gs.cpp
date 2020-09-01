@@ -63,6 +63,7 @@
 #include "cpu/m6502/m5074x.h"
 #include "sound/spkrdev.h"
 #include "sound/es5503.h"
+#include "vgmwrite.h"
 #include "machine/bankdev.h"
 #include "machine/timer.h"
 #include "machine/z80scc.h"
@@ -2962,6 +2963,7 @@ void apple2gs_state::c000_w(offs_t offset, u8 data)
 			if (m_sndglu_ctrl & 0x40)    // docram access
 			{
 				m_docram[m_sndglu_addr] = data;
+				vgm_write(m_doc->get_vgm_idx(), 0x80, m_sndglu_addr, data);
 			}
 			else
 			{
