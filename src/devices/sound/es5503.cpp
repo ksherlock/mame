@@ -38,6 +38,7 @@
 */
 
 #include "emu.h"
+#include "vgmwrite.h"
 #include "es5503.h"
 
 // device type definition
@@ -242,6 +243,10 @@ void es5503_device::device_start()
 
 	rege0 = 0xff;
 
+	m_vgm_idx = vgm_open(VGMC_ES5503, clock());
+	vgm_header_set(m_vgm_idx, 0x01, output_channels);
+	vgm_dump_sample_rom(m_vgm_idx, 0x01, memregion(DEVICE_SELF));
+
 	save_pointer(STRUCT_MEMBER(oscillators, freq), 32);
 	save_pointer(STRUCT_MEMBER(oscillators, wtsize), 32);
 	save_pointer(STRUCT_MEMBER(oscillators, control), 32);
@@ -389,6 +394,8 @@ u8 es5503_device::read(offs_t offset)
 void es5503_device::write(offs_t offset, u8 data)
 {
 	m_stream->update();
+
+	vgm_write(m_vgm_idx, 0x00, offset, data);
 
 	if (offset < 0xe0)
 	{
