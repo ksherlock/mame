@@ -186,7 +186,7 @@ private:
 public:
 	VGMTimer(running_machine &machine)
 	{
-		m_timer = machine.scheduler().timer_alloc(timer_expired_delegate(FUNC(vgmfile_callback), this));
+		m_timer = machine.scheduler().timer_alloc(timer_expired_delegate(FUNC(VGMTimer::vgmfile_callback), this));
 		m_timer->adjust(attotime::from_hz(44100), 0, attotime::from_hz(44100));
 	}
 };
