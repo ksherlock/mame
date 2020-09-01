@@ -28,6 +28,8 @@ public:
 
 	uint8_t get_channel_strobe() { return m_channel_strobe; }
 
+	uint16_t get_vgm_idx() const { return m_vgm_idx; }
+
 protected:
 	// device-level overrides
 	virtual void device_start() override;
@@ -82,6 +84,8 @@ private:
 
 	int output_channels;
 	uint32_t output_rate;
+
+	uint16_t m_vgm_idx;
 
 	emu_timer *m_timer;
 
