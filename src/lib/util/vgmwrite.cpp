@@ -12,6 +12,7 @@
 #include "../../emu/emuopts.h"
 #include "osdcomm.h"
 #include <wchar.h>
+#include <string>
 #include "vgmwrite.h"
 
 #define DYNAMIC_HEADER_SIZE
@@ -296,7 +297,8 @@ void vgm_start(running_machine &machine)
 	device_image_interface* devimg;
 	wchar_t vgmNotes[0x50];
 	
-	LOG_VGM_FILE = (uint8_t)machine.options().vgm_write();
+	const char *cp = machine.options().vgm_write();
+	LOG_VGM_FILE = cp && *cp;
 	hMachine = &machine;
 	print_info("VGM logging mode: %02X\n", LOG_VGM_FILE);
 	
@@ -731,13 +733,35 @@ static void vgm_header_clear(uint16_t vgm_id)
 	return;
 }
 
+static std::string vgm_file_name(unsigned number) {
+	if (!hMachine) return "";
+	const char *cp = hMachine->options().vgm_write();
+	if (!cp || !*cp) return "";
+
+	std::string s(cp);
+	std::string suffix;
+
+	size_t pos = s.find_last_of("/\\.");
+	if (pos != s.npos && s[pos] == '.') {
+		suffix = s.substr(pos);
+		s.resize(pos);
+	} else {
+		suffix = ".vgm";
+	}
+	s += "-";
+	s += std::to_string(number);
+	s += suffix;
+
+	return s;
+}
+
 uint16_t vgm_open(uint8_t chip_type, int clock)
 {
 	uint16_t chip_id;
 	uint16_t chip_file;
 	uint16_t curvgm;
 	uint32_t chip_val;
-	char vgm_name[0x20];
+	//char vgm_name[0x20];
 	uint8_t use_two;
 	
 	print_info("vgm_open - Chip Type %02X, Clock %u\n", chip_type, clock);
@@ -940,9 +964,10 @@ uint16_t vgm_open(uint8_t chip_type, int clock)
 		{
 			if (VgmFile[curvgm].hFile == nullptr)
 			{
-				sprintf(vgm_name, "%s%hX.vgm", vgm_namebase, curvgm);
-				print_info("Opening %s ...\t", vgm_name);
-				VgmFile[curvgm].hFile = fopen(vgm_name, "wb");
+				std::string vgm_name = vgm_file_name(curvgm);
+				//sprintf(vgm_name, "%s%hX.vgm", vgm_namebase, curvgm);
+				print_info("Opening %s ...\t", vgm_name.c_str());
+				VgmFile[curvgm].hFile = fopen(vgm_name.c_str(), "wb");
 				if (VgmFile[curvgm].hFile)
 				{
 					print_info("OK\n");

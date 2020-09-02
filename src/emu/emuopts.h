@@ -345,7 +345,7 @@ public:
 	const char *mng_write() const { return value(OPTION_MNGWRITE); }
 	const char *avi_write() const { return value(OPTION_AVIWRITE); }
 	const char *wav_write() const { return value(OPTION_WAVWRITE); }
-	const int vgm_write() const { return int_value(OPTION_VGMWRITE); }
+	const char *vgm_write() const { return value(OPTION_VGMWRITE); }
 	const char *snap_name() const { return value(OPTION_SNAPNAME); }
 	const char *snap_size() const { return value(OPTION_SNAPSIZE); }
 	const char *snap_view() const { return value(OPTION_SNAPVIEW); }
