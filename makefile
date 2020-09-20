@@ -728,6 +728,10 @@ ifdef USE_PCAP
 PARAMS += --USE_PCAP='$(USE_PCAP)'
 endif
 
+ifdef USE_VMNET
+PARAMS += --USE_VMNET='$(USE_VMNET)'
+endif
+
 ifdef NO_OPENGL
 PARAMS += --NO_OPENGL='$(NO_OPENGL)'
 endif

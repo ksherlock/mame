@@ -77,6 +77,7 @@ function osdmodulesbuild()
 		MAME_DIR .. "src/osd/modules/netdev/taptun.cpp",
 		MAME_DIR .. "src/osd/modules/netdev/pcap.cpp",
 		MAME_DIR .. "src/osd/modules/netdev/none.cpp",
+		MAME_DIR .. "src/osd/modules/netdev/vmnet.cpp",
 		MAME_DIR .. "src/osd/modules/midi/portmidi.cpp",
 		MAME_DIR .. "src/osd/modules/midi/none.cpp",
 		MAME_DIR .. "src/osd/modules/sound/js_sound.cpp",
@@ -523,6 +524,15 @@ newoption {
 }
 
 newoption {
+	trigger = "USE_VMNET",
+	description = "Include vmnet network module (OS X)",
+	allowed = {
+		{ "0",  "Don't include vmnet network module" },
+		{ "1",  "Include vmnet network module" },
+	},
+}
+
+newoption {
 	trigger = "NO_OPENGL",
 	description = "Disable use of OpenGL",
 	allowed = {
@@ -615,6 +625,14 @@ if not _OPTIONS["USE_PCAP"] then
 		_OPTIONS["USE_PCAP"] = "1"
 	else
 		_OPTIONS["USE_PCAP"] = "0"
+	end
+end
+
+if not _OPTIONS["USE_VMNET"] then
+	if _OPTIONS["targetos"]=="macosx" then
+		_OPTIONS["USE_VMNET"] = "1"
+	else
+		_OPTIONS["USE_VMNET"] = "0"
 	end
 end
 
