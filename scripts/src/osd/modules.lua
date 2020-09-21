@@ -78,6 +78,7 @@ function osdmodulesbuild()
 		MAME_DIR .. "src/osd/modules/netdev/pcap.cpp",
 		MAME_DIR .. "src/osd/modules/netdev/none.cpp",
 		MAME_DIR .. "src/osd/modules/netdev/vmnet.cpp",
+		MAME_DIR .. "src/osd/modules/netdev/vmnet_helper.cpp",
 		MAME_DIR .. "src/osd/modules/midi/portmidi.cpp",
 		MAME_DIR .. "src/osd/modules/midi/none.cpp",
 		MAME_DIR .. "src/osd/modules/sound/js_sound.cpp",
@@ -502,6 +503,12 @@ function osdmodulestargetconf()
 		}
 	end
 
+	if _OPTIONS["USE_VMNET"]=="1" then
+		links {
+			"vmnet.framework"
+		}
+	end
+
 end
 
 
@@ -529,6 +536,15 @@ newoption {
 	allowed = {
 		{ "0",  "Don't include vmnet network module" },
 		{ "1",  "Include vmnet network module" },
+	},
+}
+
+newoption {
+	trigger = "USE_VMNET_HELPER",
+	description = "Include vmnet helper network module (OS X)",
+	allowed = {
+		{ "0",  "Don't include vmnet helper network module" },
+		{ "1",  "Include vmnet network helper module" },
 	},
 }
 
@@ -625,14 +641,6 @@ if not _OPTIONS["USE_PCAP"] then
 		_OPTIONS["USE_PCAP"] = "1"
 	else
 		_OPTIONS["USE_PCAP"] = "0"
-	end
-end
-
-if not _OPTIONS["USE_VMNET"] then
-	if _OPTIONS["targetos"]=="macosx" then
-		_OPTIONS["USE_VMNET"] = "1"
-	else
-		_OPTIONS["USE_VMNET"] = "0"
 	end
 end
 
