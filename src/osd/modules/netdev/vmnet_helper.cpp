@@ -237,7 +237,7 @@ netdev_vmnet_helper::netdev_vmnet_helper(const char *name, class device_network_
 	close(pipe_stdin[0]);
 	close(pipe_stdout[1]);
 
-	// explicitely mark as close-on-exec so they can't be inherited by a
+	// explicitly mark as close-on-exec so they can't be inherited by a
 	// child and keep the pipes open. This is not a theoretical problem.
 	set_close_exec(m_pipe[0]);
 	set_close_exec(m_pipe[1]);
