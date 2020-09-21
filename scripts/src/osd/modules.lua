@@ -83,6 +83,8 @@ function osdmodulesbuild()
 		MAME_DIR .. "src/osd/modules/netdev/taptun.cpp",
 		MAME_DIR .. "src/osd/modules/netdev/pcap.cpp",
 		MAME_DIR .. "src/osd/modules/netdev/none.cpp",
+		MAME_DIR .. "src/osd/modules/netdev/vmnet.cpp",
+		MAME_DIR .. "src/osd/modules/netdev/vmnet_helper.cpp",
 		MAME_DIR .. "src/osd/modules/midi/portmidi.cpp",
 		MAME_DIR .. "src/osd/modules/midi/none.cpp",
 		MAME_DIR .. "src/osd/modules/sound/js_sound.cpp",
@@ -518,11 +520,18 @@ function osdmodulestargetconf()
 		}
 	end
 
+	if _OPTIONS["USE_VMNET"]=="1" then
+		links {
+			"vmnet.framework"
+		}
+	end
+
 	if _OPTIONS["NO_USE_PULSEAUDIO"]=="0" then
 		links {
 			ext_lib("pulse"),
 		}
 	end
+
 end
 
 
@@ -541,6 +550,24 @@ newoption {
 	allowed = {
 		{ "0",  "Don't include pcap network module" },
 		{ "1",  "Include pcap network module" },
+	},
+}
+
+newoption {
+	trigger = "USE_VMNET",
+	description = "Include vmnet network module (OS X)",
+	allowed = {
+		{ "0",  "Don't include vmnet network module" },
+		{ "1",  "Include vmnet network module" },
+	},
+}
+
+newoption {
+	trigger = "USE_VMNET_HELPER",
+	description = "Include vmnet helper network module (OS X)",
+	allowed = {
+		{ "0",  "Don't include vmnet helper network module" },
+		{ "1",  "Include vmnet network helper module" },
 	},
 }
 

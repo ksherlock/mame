@@ -261,6 +261,8 @@ void osd_common_t::register_options()
 
 	REGISTER_MODULE(m_mod_man, NETDEV_TAPTUN);
 	REGISTER_MODULE(m_mod_man, NETDEV_PCAP);
+	REGISTER_MODULE(m_mod_man, NETDEV_VMNET);
+	REGISTER_MODULE(m_mod_man, NETDEV_VMNET_HELPER);
 	REGISTER_MODULE(m_mod_man, NETDEV_NONE);
 
 #ifndef NO_USE_MIDI
