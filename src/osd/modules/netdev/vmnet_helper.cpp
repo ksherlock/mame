@@ -1,0 +1,520 @@
+// license:BSD-3-Clause
+// copyright-holders:Kelvin Sherlock
+
+
+/*
+ https://developer.apple.com/documentation/vmnet
+
+ A sandboxed user space process must have the com.apple.vm.networking entitlement
+ in order to use vmnet API.
+
+ clang -framework vmnet -framework Foundation
+*/
+
+#if defined(OSD_NET_USE_VMNET_HELPER)
+
+
+
+#include "emu.h"
+#include "osdnet.h"
+#include "modules/osdmodule.h"
+#include "netdev_module.h"
+
+
+#include <cstdint>
+#include <cstdlib>
+#include <cerrno>
+#include <csignal>
+#include <cstring>
+
+#include <algorithm>
+#include <string>
+
+#include <sys/types.h>
+#include <sys/uio.h>
+#include <unistd.h>
+#include <mach-o/dyld.h>
+
+
+enum {
+	MSG_QUIT,
+	MSG_STATUS,
+	MSG_READ,
+	MSG_WRITE
+};
+#define MAKE_MSG(msg, extra) (msg | ((extra) << 8))
+
+#include "vmnet_common.h"
+
+class vmnet_helper_module : public osd_module, public netdev_module
+{
+public:
+
+	vmnet_helper_module() : osd_module(OSD_NETDEV_PROVIDER, "vmnet_helper"), netdev_module()
+	{
+		fprintf(stderr, "%s\n", __func__);
+	}
+	virtual ~vmnet_helper_module() {}
+
+	virtual int init(const osd_options &options);
+	virtual void exit();
+
+	virtual bool probe() { 
+		fprintf(stderr, "%s\n", __func__);
+		return true;
+	}
+};
+
+class netdev_vmnet_helper : public osd_netdev
+{
+public:
+	netdev_vmnet_helper(const char *name, class device_network_interface *ifdev, int rate);
+	~netdev_vmnet_helper();
+
+	int send(uint8_t *buf, int len) override;
+	void set_mac(const char *mac) override;
+protected:
+	int recv_dev(uint8_t **buf) override;
+private:
+
+	void shutdown_child();
+	bool check_child();
+
+	int message_status();
+	int message_write(void *buffer, uint32_t length);
+	int message_read();
+
+	ssize_t read(void *buffer, size_t size);
+	ssize_t write(const void *buffer, size_t size);
+
+	ssize_t readv(const struct iovec *iov, int iovcnt);
+	ssize_t writev(const struct iovec *iov, int iovcnt);
+
+
+	char m_vmnet_mac[6];
+	uint32_t m_vmnet_mtu;
+	uint32_t m_vmnet_packet_size;
+
+	char m_mac[6];
+
+	uint8_t *m_buffer = 0;
+	pid_t m_child = -1;
+	int m_pipe[2];
+};
+
+
+/* block the sigpipe signal */
+static int block_pipe(struct sigaction *oact) {
+	struct sigaction act;
+	memset(&act, 0, sizeof(act));
+	act.sa_handler = SIG_IGN;
+	act.sa_flags = SA_RESTART;
+
+	return sigaction(SIGPIPE, &act, oact);
+}
+static int restore_pipe(const struct sigaction *oact) {
+	return sigaction(SIGPIPE, oact, NULL);
+}
+
+static std::string get_relative_path(std::string leaf) {
+
+	uint32_t size = 0;
+	char *buffer = 0;
+	int ok;
+
+
+	ok = _NSGetExecutablePath(NULL, &size);
+	size += leaf.length() + 1;
+	buffer = (char *)malloc(size);
+	if (!buffer) return leaf;
+
+	ok = _NSGetExecutablePath(buffer, &size);
+	if (ok < 0) {
+		free(buffer);
+		return leaf;
+	}
+
+	std::string path(buffer);
+	free(buffer);
+
+	auto pos = path.rfind('/');
+	if (pos == path.npos) return leaf;
+
+	path.resize(pos + 1);
+	path += leaf;
+	return path;
+}
+
+netdev_vmnet_helper::netdev_vmnet_helper(const char *name, class device_network_interface *ifdev, int rate)
+	: osd_netdev(ifdev, rate) {
+
+	fprintf(stderr, "%s\n", __func__);
+
+	int ok;
+
+	const char *const argv[] = { "vmnet_helper", NULL };
+
+	int pipe_stdin[2];
+	int pipe_stdout[2];
+
+	struct sigaction oldaction;
+
+
+	/* fd[0] = read, fd[1] = write */
+	ok = pipe(pipe_stdin);
+	if (ok < 0) {
+		osd_printf_verbose("vmnet_helper: pipe failed %d\n", errno);
+		return;
+	}
+
+	ok = pipe(pipe_stdout);
+	if (ok < 0) {
+		osd_printf_verbose("vmnet_helper: pipe failed %d\n", errno);
+		close(pipe_stdin[0]);
+		close(pipe_stdin[1]);
+		return;
+	}
+
+
+	std::string path = get_relative_path("vmnet_helper");
+
+	m_child = fork();
+	if (m_child < 0) {
+		osd_printf_verbose("vmnet_helper: pipe failed %d\n", errno);
+		close(pipe_stdin[0]);
+		close(pipe_stdin[1]);
+		close(pipe_stdout[0]);
+		close(pipe_stdout[1]);
+		return;
+	}
+
+	if (m_child == 0) {
+		extern char **environ;
+		/* need to setsid() on the child */
+
+		dup2(pipe_stdin[0], STDIN_FILENO);
+		dup2(pipe_stdout[1], STDOUT_FILENO);
+
+		// close-on-exec flag isn't set for any file descriptors.
+		// and F_MAXFD fcntl isn't available on darwin.
+		// /dev/fd/ is fake directory of open file descriptors but
+		// that's too much work.  Use the highest pipe # as a proxy
+		// for the max fd. as a bonus it will handle closing all pipes.
+
+		#if 0
+		close(pipe_stdin[0]);
+		close(pipe_stdin[1]);
+		close(pipe_stdout[0]);
+		close(pipe_stdout[1]);
+		#else
+		int maxfd = 3;
+		maxfd = std::max(maxfd, pipe_stdin[0]);
+		maxfd = std::max(maxfd, pipe_stdin[1]);
+		maxfd = std::max(maxfd, pipe_stdout[0]);
+		maxfd = std::max(maxfd, pipe_stdout[1]);
+		for (int fd = 3; fd <= maxfd; ++fd)
+			close(fd);
+		#endif
+		setsid();
+		execve(path.c_str(), (char *const *)argv, environ);
+		::write(STDERR_FILENO, "vmnet_helper: execve failed\n", 14);
+		::write(STDERR_FILENO, "path was: ", 10);
+		::write(STDERR_FILENO, path.c_str(), path.length());
+		::write(STDERR_FILENO, "\n", 1);
+		_exit(1);
+	}
+
+	m_pipe[0] = pipe_stdout[0];
+	m_pipe[1] = pipe_stdin[1];
+
+	close(pipe_stdin[0]);
+	close(pipe_stdout[1]);
+
+	block_pipe(&oldaction);
+	/* get the vmnet interface mtu, etc */
+	ok = message_status();
+	restore_pipe(&oldaction);
+	if (ok < 0) {
+		shutdown_child();
+	}
+}
+
+int netdev_vmnet_helper::message_status() {
+
+	ssize_t ok;
+	uint32_t msg = MAKE_MSG(MSG_STATUS, 0);
+	ok = write(&msg, 4);
+	if (ok != 4) return -1;
+
+	ok = read(&msg, 4);
+	if (ok != 4) return -1;
+
+	if (msg != MAKE_MSG(MSG_STATUS, 6 + 4 + 4)) return -1;
+
+	struct iovec iov[3];
+	iov[0].iov_len = 6;
+	iov[0].iov_base = m_vmnet_mac;
+	iov[1].iov_len = 4;
+	iov[1].iov_base = &m_vmnet_mtu;
+	iov[2].iov_len = 4;
+	iov[2].iov_base = &m_vmnet_packet_size;
+
+	ok = readv(iov, 3);
+	if (ok != 6 + 4 + 4) return -1;
+
+	/* copy mac to fake mac */
+	memcpy(m_mac, m_vmnet_mac, 6);
+
+	/* sanity check */
+	/* expect MTU = 1500, packet_size = 1518 */
+	if (m_vmnet_packet_size < 256) {
+		m_vmnet_packet_size = 1518;
+	}
+	m_buffer = (uint8_t *)malloc(m_vmnet_packet_size);
+	if (!m_buffer) return -1;
+	return 0;
+}
+
+int netdev_vmnet_helper::message_write(void *buffer, uint32_t length) {
+	ssize_t ok;
+	uint32_t msg;
+	struct iovec iov[2];
+
+
+	msg = MAKE_MSG(MSG_WRITE, length);
+
+	iov[0].iov_base = &msg;
+	iov[0].iov_len = 4;
+	iov[1].iov_base = buffer;
+	iov[1].iov_len = length;
+
+	ok = writev(iov, 2);
+	if (!ok) return -1;
+	ok = read(&msg, 4);
+	if (ok != 4) return -1;
+	//if (msg != MAKE_MSG(MSG_WRITE, length)) return -1;
+	return msg;
+}
+
+int netdev_vmnet_helper::message_read() {
+
+
+	uint32_t msg;
+	int ok;
+	int xfer;
+
+	msg = MAKE_MSG(MSG_READ, 0);
+
+	ok = write(&msg, 4);
+	if (ok != 4) return -1;
+
+	ok = read(&msg, 4);
+	if (ok != 4) return -1;
+
+	if ((msg & 0xff) != MSG_READ) return -1;
+
+	xfer = msg >> 8;
+	if (xfer > m_vmnet_packet_size) {
+
+		osd_printf_verbose("vmnet_helper: packet size too big: %d\n", xfer);
+
+		/* drain the message ... */
+		while (xfer) {
+			int count = m_vmnet_packet_size;
+			if (count > xfer) count = xfer;
+			ok = read(m_buffer, count);
+			if (ok < 0) return -1;
+			xfer -= ok;
+		}
+		return -1;
+	}
+	if (xfer == 0) return 0;
+	ok = read(m_buffer, xfer);
+	// if (ok != xfer) return -1;
+	return ok;
+}
+
+void netdev_vmnet_helper::shutdown_child() {
+	if (m_child > 0) {
+		close(m_pipe[0]);
+		close(m_pipe[1]);
+		for(;;) {
+			int ok = waitpid(m_child, NULL, 0);
+			if (ok < 0 && errno == EINTR) continue;
+			break;
+		}
+		free(m_buffer);
+		m_buffer = 0;
+		m_child = -1;
+	}
+}
+
+bool netdev_vmnet_helper::check_child() {
+
+	if (m_child < 0) return false;
+
+	pid_t pid;
+	int stat;
+	for (;;) {
+		pid = waitpid(m_child, &stat, WNOHANG);
+		if (pid < 0 && errno == EINTR) continue;
+		break;
+	}
+	if (pid < 0 && errno == ECHILD) {
+		fprintf(stderr, "vmnet_helper: child process does not exist\n");
+		close(m_pipe[0]);
+		close(m_pipe[1]);
+		free(m_buffer);
+		m_buffer = 0;
+		m_child = -1;
+		return false;
+	}
+	if (pid == m_child) {
+		if (WIFEXITED(stat)) fprintf(stderr, "vmnet_helper: child process exited.\n");
+		if (WIFSIGNALED(stat)) fprintf(stderr, "vmnet_helper: child process signalled.\n");
+
+		close(m_pipe[0]);
+		close(m_pipe[1]);
+		free(m_buffer);
+		m_buffer = 0;
+		m_child = -1;
+		return false;
+	}
+
+	// if pid == 0 should drain the pipe as well...
+	return true;
+}
+
+
+netdev_vmnet_helper::~netdev_vmnet_helper() {
+	fprintf(stderr, "%s\n", __func__);
+	shutdown_child();
+}
+
+void netdev_vmnet_helper::set_mac(const char *mac)
+{
+	memcpy(m_mac, mac, 6);
+}
+
+
+
+int netdev_vmnet_helper::send(uint8_t *buf, int len)
+{
+	int ok;
+	struct sigaction oldaction;
+
+	if (m_child <= 0) return 0;
+	if (len <= 0) return 0;
+
+
+	if (len > m_vmnet_packet_size) {
+		osd_printf_verbose("vmnet_helper: packed too big %d\n", len);
+		return 0;
+	}
+
+	// copy to our buffer and fix the mac address...
+	if (memcmp(m_mac, m_vmnet_mac, 6) != 0) {
+		// nb - do we need 2 buffers, in case read recv buffer still in use?
+		memcpy(m_buffer, buf, len);
+		fix_outgoing_packet(m_buffer, len, m_vmnet_mac, m_mac);
+		buf = m_buffer;
+	}
+
+	block_pipe(&oldaction);
+	ok = message_write(buf, len);
+	restore_pipe(&oldaction);
+	if (ok < 0) {
+		check_child();
+		return 0;
+	}
+	return ok;
+}
+
+int netdev_vmnet_helper::recv_dev(uint8_t **buf) {
+
+	int ok;
+	struct sigaction oldaction;
+
+	if (m_child <= 0) return 0;
+
+	block_pipe(&oldaction);
+	ok = message_read();
+	restore_pipe(&oldaction);
+
+	if (ok < 0) {
+		check_child();
+		return 0;
+	}
+	if (memcmp(m_mac, m_vmnet_mac, 6) != 0) {
+		fix_incoming_packet(m_buffer, ok, m_vmnet_mac, m_mac);
+	}
+
+	*buf = m_buffer;
+	return ok;
+
+}
+
+
+
+ssize_t netdev_vmnet_helper::read(void *data, size_t nbytes) {
+	for (;;) {
+		ssize_t rv = ::read(m_pipe[0], data, nbytes);
+		if (rv < 0 && errno == EINTR) continue;
+		return rv;
+	}
+}
+
+ssize_t netdev_vmnet_helper::readv(const struct iovec *iov, int iovcnt) {
+
+	for(;;) {
+		ssize_t rv = ::readv(m_pipe[0], iov, iovcnt);
+		if (rv < 0 && errno == EINTR) continue;
+		return rv;
+	}
+}
+
+ssize_t netdev_vmnet_helper::write(const void *data, size_t nbytes) {
+	for (;;) {
+		ssize_t rv = ::write(m_pipe[1], data, nbytes);
+		if (rv < 0 && errno == EINTR) continue;
+		return rv;
+	}
+}
+
+ssize_t netdev_vmnet_helper::writev(const struct iovec *iov, int iovcnt) {
+
+	for(;;) {
+		ssize_t rv = ::writev(m_pipe[1], iov, iovcnt);
+		if (rv < 0 && errno == EINTR) continue;
+		return rv;
+	}
+}
+
+static CREATE_NETDEV(create_vmnet_helper)
+{
+	fprintf(stderr, "%s\n", __func__);
+	auto *dev = global_alloc(netdev_vmnet_helper(ifname, ifdev, rate));
+	return dynamic_cast<osd_netdev *>(dev);
+}
+
+int vmnet_helper_module::init(const osd_options &options) {
+	fprintf(stderr, "%s\n", __func__);
+	add_netdev("vmnet_helper", "VM Network Device (H)", create_vmnet_helper);
+	return 0;
+}
+
+void vmnet_helper_module::exit() {
+	fprintf(stderr, "%s\n", __func__);
+	clear_netdev();
+}
+
+
+#else
+	#include "modules/osdmodule.h"
+	#include "netdev_module.h"
+
+	MODULE_NOT_SUPPORTED(vmnet_helper_module, OSD_NETDEV_PROVIDER, "vmnet_helper")
+#endif
+
+
+MODULE_DEFINITION(NETDEV_VMNET_HELPER, vmnet_helper_module)
