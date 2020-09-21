@@ -755,6 +755,14 @@ ifdef USE_PCAP
 PARAMS += --USE_PCAP='$(USE_PCAP)'
 endif
 
+ifdef USE_VMNET
+PARAMS += --USE_VMNET='$(USE_VMNET)'
+endif
+
+ifdef USE_VMNET_HELPER
+PARAMS += --USE_VMNET_HELPER='$(USE_VMNET_HELPER)'
+endif
+
 ifdef NO_OPENGL
 PARAMS += --NO_OPENGL='$(NO_OPENGL)'
 endif
