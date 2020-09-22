@@ -26,6 +26,8 @@
 #include <cerrno>
 #include <csignal>
 #include <cstring>
+
+#include <algorithm>
 #include <string>
 
 #include <sys/types.h>
@@ -193,11 +195,26 @@ netdev_vmnet_helper::netdev_vmnet_helper(const char *name, class device_network_
 		dup2(pipe_stdin[0], STDIN_FILENO);
 		dup2(pipe_stdout[1], STDOUT_FILENO);
 
+		// close-on-exec flag isn't set for any file descriptors.
+		// and F_MAXFD fcntl isn't available on darwin.
+		// /dev/fd/ is fake directory of open file descriptors but
+		// that's too much work.  Use the highest pipe # as a proxy
+		// for the max fd. as a bonus it will handle closing all pipes.
+
+		#if 0
 		close(pipe_stdin[0]);
 		close(pipe_stdin[1]);
 		close(pipe_stdout[0]);
 		close(pipe_stdout[1]);
-
+		#else
+		int maxfd = 3;
+		maxfd = std::max(maxfd, pipe_stdin[0]);
+		maxfd = std::max(maxfd, pipe_stdin[1]);
+		maxfd = std::max(maxfd, pipe_stdout[0]);
+		maxfd = std::max(maxfd, pipe_stdout[1]);
+		for (int fd = 3; fd <= maxfd; ++fd)
+			close(fd);
+		#endif
 		setsid();
 		execve(path.c_str(), (char *const *)argv, environ);
 		::write(STDERR_FILENO, "vmnet_helper: execve failed\n", 14);
