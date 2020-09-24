@@ -56,7 +56,6 @@
 	#endif
 
 	return YES;
-
 }
 
 
@@ -149,7 +148,6 @@ static NSMenuItem *BuildSpecialMenu(id target){
 		[array addObject: item];
 		[item release];
 	}
-
 
 	[menu setItemArray: array];
 	[menu setAutoenablesItems: YES];
