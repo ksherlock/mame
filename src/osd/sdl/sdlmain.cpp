@@ -488,6 +488,10 @@ void sdl_osd_interface::init(running_machine &machine)
 		machine.add_logerror_callback(std::bind(&sdl_osd_interface::output_oslog, this, _1));
 	}
 
+#ifdef SDLMAME_MACOSX
+	extern void sdl_macos_menus(running_machine &machine);
+	sdl_macos_menus(machine);
+#endif
 
 
 #ifdef SDLMAME_EMSCRIPTEN
