@@ -428,6 +428,7 @@ project ("osd_" .. _OPTIONS["osd"])
 		MAME_DIR .. "src/osd/sdl/osdsdl.h",
 		MAME_DIR .. "src/osd/sdl/sdlprefix.h",
 		MAME_DIR .. "src/osd/sdl/sdlmain.cpp",
+		MAME_DIR .. "src/osd/sdl/macos_menus.mm",
 		MAME_DIR .. "src/osd/osdepend.h",
 		MAME_DIR .. "src/osd/sdl/video.cpp",
 		MAME_DIR .. "src/osd/sdl/window.cpp",
