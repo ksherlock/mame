@@ -528,7 +528,7 @@ u16 cs8900a_device::cs8900_receive()
 			newframe = false;
 		}
 
-		assert((len & 1) == 0); /* length has to be even! */
+		// assert((len & 1) == 0); /* length has to be even! */
 
 		if (newframe)
 		{
