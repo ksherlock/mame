@@ -1540,8 +1540,8 @@ void sound_manager::update(int param)
 	}
 
 #if (SOUND_DEBUG)
-	if (lscale != m_compressor_scale)
-	printf("scale=%.5f\n", m_compressor_scale);
+	// if (lscale != m_compressor_scale)
+	// printf("scale=%.5f\n", m_compressor_scale);
 #endif
 
 	// track whether there are pending scale changes in left/right
