@@ -651,6 +651,15 @@ void osd_common_t::init_subsystems()
 	machine().output().set_global_notifier(output_notifier_callback, this);
 
 	input_init();
+
+	#ifdef AMPLE
+	/* ample - auto-select the first network interface */
+	for (device_network_interface &network : network_interface_iterator(machine().root_device()))
+	{
+		network.set_interface(0);
+		break;
+	}
+	#endif
 }
 
 bool osd_common_t::video_init()
