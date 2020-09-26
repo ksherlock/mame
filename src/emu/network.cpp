@@ -54,7 +54,8 @@ void network_manager::config_load(config_type cfg_type, config_level cfg_level, 
 				{
 					if (!strcmp(tag, network.device().tag())) {
 						int interface = node->get_attribute_int("interface", 0);
-						network.set_interface(interface);
+						if (interface != network.get_interface())
+							network.set_interface(interface);
 						const char *mac_addr = node->get_attribute_string("mac", nullptr);
 						if (mac_addr != nullptr && strlen(mac_addr) == 17) {
 							char mac[7];
