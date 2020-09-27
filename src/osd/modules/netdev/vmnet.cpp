@@ -251,7 +251,7 @@ int netdev_vmnet::recv_dev(uint8_t **buf) {
 
 static CREATE_NETDEV(create_vmnet)
 {
-	auto *dev = global_alloc(netdev_vmnet(ifname, ifdev, rate));
+	auto *dev = new netdev_vmnet(ifname, ifdev, rate);
 	return dynamic_cast<osd_netdev *>(dev);
 }
 
