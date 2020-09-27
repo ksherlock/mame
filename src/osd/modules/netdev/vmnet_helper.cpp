@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <string>
 
+#include <fcntl.h>
 #include <sys/types.h>
 #include <sys/uio.h>
 #include <unistd.h>
@@ -145,6 +146,12 @@ static std::string get_relative_path(std::string leaf) {
 	return path;
 }
 
+static int set_close_exec(int fd) {
+	int flags;
+	flags = fcntl(fd, F_GETFD, 0);
+	return flags >= 0 ? fcntl(fd, F_SETFD, flags | FD_CLOEXEC) : -1;
+}
+
 netdev_vmnet_helper::netdev_vmnet_helper(const char *name, class device_network_interface *ifdev, int rate)
 	: osd_netdev(ifdev, rate) {
 
@@ -229,6 +236,11 @@ netdev_vmnet_helper::netdev_vmnet_helper(const char *name, class device_network_
 
 	close(pipe_stdin[0]);
 	close(pipe_stdout[1]);
+
+	// explicitely mark as close-on-exec so they can't be inherited by a
+	// child and keep the pipes open. This is not a theoretical problem.
+	set_close_exec(m_pipe[0]);
+	set_close_exec(m_pipe[1]);
 
 	block_pipe(&oldaction);
 	/* get the vmnet interface mtu, etc */
