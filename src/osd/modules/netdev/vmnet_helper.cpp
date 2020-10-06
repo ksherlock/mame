@@ -505,7 +505,7 @@ ssize_t netdev_vmnet_helper::writev(const struct iovec *iov, int iovcnt) {
 static CREATE_NETDEV(create_vmnet_helper)
 {
 	fprintf(stderr, "%s\n", __func__);
-	auto *dev = global_alloc(netdev_vmnet_helper(ifname, ifdev, rate));
+	auto *dev = new netdev_vmnet_helper(ifname, ifdev, rate);
 	return dynamic_cast<osd_netdev *>(dev);
 }
 
