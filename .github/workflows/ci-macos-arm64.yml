@@ -9,10 +9,13 @@ jobs:
       - uses: actions/checkout@master
       - name: Install dependencies
         run: brew install sdl2
-      - name: uname -m
-        run: sed -ibak 's/\$(shell uname -m)/arm64/' makefile
-      - name: uname -p
-        run: sed -ibak 's/\$(shell uname -p)/arm/' makefile
+      - name: uname fixup
+        run: |
+          sed -ibak 's/\$(shell uname -m)/arm64/' makefile
+          sed -ibak 's/\$(shell uname -p)/arm/' makefile
+          sed -ibak 's/\$(shell uname -mps)/Darwin arm64 arm/' makefile
+          head -n200 makefile
+          
       - name: Build
         env:
           USE_LIBSDL: 1
