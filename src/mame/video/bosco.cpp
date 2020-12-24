@@ -124,10 +124,10 @@ VIDEO_START_MEMBER(bosco_state,bosco)
 	m_bg_tilemap->configure_groups(*m_gfxdecode->gfx(0), 0x1f);
 	m_fg_tilemap->configure_groups(*m_gfxdecode->gfx(0), 0x1f);
 
-	m_spriteram = m_videoram + 0x03d4;
+	m_spriteram = &m_videoram[0x03d4];
 	m_spriteram_size = 0x0c;
 	m_spriteram2 = m_spriteram + 0x0800;
-	m_bosco_radarx = m_videoram + 0x03f0;
+	m_bosco_radarx = &m_videoram[0x03f0];
 	m_bosco_radary = m_bosco_radarx + 0x0800;
 
 	m_bosco_starclr = 1;
@@ -266,16 +266,16 @@ uint32_t bosco_state::screen_update_bosco(screen_device &screen, bitmap_ind16 &b
 		{
 			for (int x = 63; x >= 0; x--)
 			{
-				bitmap.pix16(y, x + 3) = bitmap.pix16(y, x);
-				bitmap.pix16(y, x) = m_palette->black_pen();
+				bitmap.pix(y, x + 3) = bitmap.pix(y, x);
+				bitmap.pix(y, x) = m_palette->black_pen();
 			}
 		}
 		else
 		{
 			for (int x = 224; x < 288; x++)
 			{
-				bitmap.pix16(y, x - 3) = bitmap.pix16(y, x);
-				bitmap.pix16(y, x) = m_palette->black_pen();
+				bitmap.pix(y, x - 3) = bitmap.pix(y, x);
+				bitmap.pix(y, x) = m_palette->black_pen();
 			}
 		}
 	}

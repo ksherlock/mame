@@ -40,7 +40,6 @@ cosmicg - board can operate in b&w mode if there is no PROM, in this case
 #include "cpu/tms9900/tms9980a.h"
 #include "cpu/z80/z80.h"
 #include "sound/samples.h"
-#include "sound/volt_reg.h"
 #include "speaker.h"
 
 
@@ -222,65 +221,42 @@ void cosmic_state::cosmica_sound_output_w(offs_t offset, uint8_t data)
 				{
 				case 2:
 					if (m_samples->playing(2))
-					{
 						m_samples->stop(2);
-						m_samples->start(2, 3);
-					}
-					else
-						m_samples->start(2, 3);
+					m_samples->start(2, 3);
 					break;
 
 				case 3:
 					if (m_samples->playing(3))
-					{
 						m_samples->stop(3);
-						m_samples->start(3, 4);
-					}
-					else
-						m_samples->start(3, 4);
+					m_samples->start(3, 4);
 					break;
 
 				case 4:
 					if (m_samples->playing(4))
-					{
 						m_samples->stop(4);
-						m_samples->start(4, 5);
-					}
-					else
-						m_samples->start(4, 5);
+					m_samples->start(4, 5);
 					break;
 
 				case 5:
 					if (m_samples->playing(5))
-					{
 						m_samples->stop(5);
-						m_samples->start(5, 6);
-					}
-					else
-						m_samples->start(5, 6);
+					m_samples->start(5, 6);
 					break;
 
 				case 6:
 					if (m_samples->playing(6))
-					{
 						m_samples->stop(6);
-						m_samples->start(6, 7);
-					}
-					else
-						m_samples->start(6, 7);
+					m_samples->start(6, 7);
 					break;
 
 				case 7:
 					if (m_samples->playing(7))
-					{
 						m_samples->stop(7);
-						m_samples->start(7, 8);
-					}
-					else
-						m_samples->start(7, 8);
+					m_samples->start(7, 8);
 					break;
 				}
 			}
+			break;
 
 		case 3: /*Dive Bombing Type B (G.S.B)*/
 			if (data)
@@ -1064,8 +1040,6 @@ void cosmic_state::panic(machine_config &config)
 	m_samples->add_route(ALL_OUTPUTS, "speaker", 0.25);
 
 	DAC_1BIT(config, m_dac, 0).add_route(ALL_OUTPUTS, "speaker", 0.5);
-	voltage_regulator_device &vref(VOLTAGE_REGULATOR(config, "vref", 0));
-	vref.add_route(0, "dac", 1.0, DAC_VREF_POS_INPUT);
 }
 
 void cosmic_state::cosmica(machine_config &config)
@@ -1119,8 +1093,6 @@ void cosmic_state::cosmicg(machine_config &config)
 	m_samples->add_route(ALL_OUTPUTS, "speaker", 0.25);
 
 	DAC_1BIT(config, m_dac, 0).add_route(ALL_OUTPUTS, "speaker", 0.5); // NE556
-	voltage_regulator_device &vref(VOLTAGE_REGULATOR(config, "vref", 0));
-	vref.add_route(0, "dac", 1.0, DAC_VREF_POS_INPUT);
 	// Other DACs include 3-bit binary-weighted (100K/50K/25K) DAC combined with another NE556 for attack march
 }
 
@@ -1142,8 +1114,6 @@ void cosmic_state::magspot(machine_config &config)
 	SPEAKER(config, "speaker").front_center();
 
 	DAC_1BIT(config, m_dac, 0).add_route(ALL_OUTPUTS, "speaker", 0.5);
-	voltage_regulator_device &vref(VOLTAGE_REGULATOR(config, "vref", 0));
-	vref.add_route(0, "dac", 1.0, DAC_VREF_POS_INPUT);
 }
 
 void cosmic_state::devzone(machine_config &config)
@@ -1171,8 +1141,6 @@ void cosmic_state::nomnlnd(machine_config &config)
 	SPEAKER(config, "speaker").front_center();
 
 	DAC_1BIT(config, m_dac, 0).add_route(ALL_OUTPUTS, "speaker", 0.5);
-	voltage_regulator_device &vref(VOLTAGE_REGULATOR(config, "vref", 0));
-	vref.add_route(0, "dac", 1.0, DAC_VREF_POS_INPUT);
 }
 
 

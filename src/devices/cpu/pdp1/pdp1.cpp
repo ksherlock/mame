@@ -386,6 +386,8 @@ pdp1_device::pdp1_device(const machine_config &mconfig, const char *tag, device_
 	, m_program_config("program", ENDIANNESS_BIG, 32, 18, -2) // data is actually 18 bits wide
 	, m_extern_iot(*this)
 	, m_io_sc_callback(*this)
+	, m_program(nullptr)
+	, m_reset_param(nullptr)
 {
 	m_program_config.m_is_octal = true;
 }
@@ -549,6 +551,7 @@ void pdp1_device::device_start()
 	{
 	default:
 		m_extend_support = 0;
+		[[fallthrough]];
 	case 0:     /* no extension */
 		m_extended_address_mask = 07777;
 		m_address_extension_mask = 00000;
@@ -783,7 +786,7 @@ void pdp1_device::execute_run()
 				/* read first word as instruction */
 				MB = 0;
 				/* data will be transferred to IO register in response to RPB */
-				m_extern_iot[2](2, 0, 1, IO, AC);
+				m_extern_iot[2](2, 1, MB, IO, AC);
 				m_rim_step = 1;
 				m_ios = 0;
 				break;
@@ -827,9 +830,8 @@ void pdp1_device::execute_run()
 
 			case 2:
 				/* read second word as data */
-				MB = 0;
 				/* data will be transferred to IO register in response to RPB */
-				m_extern_iot[2](2, 0, 1, IO, AC);
+				m_extern_iot[2](2, 1, MB, IO, AC);
 				m_rim_step = 3;
 				m_ios = 0;
 				break;

@@ -43,7 +43,7 @@ usb_sound_device::usb_sound_device(const machine_config &mconfig, device_type ty
 		m_out_latch(0),
 		m_last_p2_value(0),
 		m_program_ram(*this, "pgmram"),
-		m_work_ram(*this, "workram"),
+		m_work_ram(*this, "workram", 4*256, ENDIANNESS_LITTLE),
 		m_work_ram_bank(0),
 		m_t1_clock(0),
 		m_t1_clock_mask(0),
@@ -100,7 +100,7 @@ void usb_sound_device::device_start()
 
 #else
 
-	m_stream = stream_alloc_legacy(0, 1, USB_2MHZ_CLOCK);
+	m_stream = stream_alloc(0, 1, USB_2MHZ_CLOCK);
 
 	m_noise_shift = 0x15555;
 
@@ -451,15 +451,15 @@ void usb_sound_device::env_w(int which, u8 offset, u8 data)
 }
 
 //-------------------------------------------------
-//  sound_stream_update_legacy - handle a stream update
+//  sound_stream_update - handle a stream update
 //-------------------------------------------------
 
-void usb_sound_device::sound_stream_update_legacy(sound_stream &stream, stream_sample_t const * const *inputs, stream_sample_t * const *outputs, int samples)
+void usb_sound_device::sound_stream_update(sound_stream &stream, std::vector<read_stream_view> const &inputs, std::vector<write_stream_view> &outputs)
 {
-	stream_sample_t *dest = outputs[0];
+	auto &dest = outputs[0];
 
 	// iterate over samples
-	while (samples--)
+	for (int sampindex = 0; sampindex < dest.samples(); sampindex++)
 	{
 		/*----------------
 		    Noise Source
@@ -590,7 +590,7 @@ void usb_sound_device::sound_stream_update_legacy(sound_stream &stream, stream_s
 		  WEIGHT
 
 		*/
-		*dest++ = 3000 * m_final_filter.step_cr(sample);
+		dest.put(sampindex, 0.1 * m_final_filter.step_cr(sample));
 	}
 }
 
@@ -726,7 +726,7 @@ void usb_sound_device::usb_map(address_map &map)
 
 void usb_sound_device::usb_portmap(address_map &map)
 {
-	map(0x00, 0xff).rw(FUNC(usb_sound_device::workram_r), FUNC(usb_sound_device::workram_w)).share("workram");
+	map(0x00, 0xff).rw(FUNC(usb_sound_device::workram_r), FUNC(usb_sound_device::workram_w));
 }
 
 

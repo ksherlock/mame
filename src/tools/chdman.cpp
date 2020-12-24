@@ -395,10 +395,27 @@ public:
 				uint64_t src_track_start = m_info.track[tracknum].offset;
 				uint64_t src_track_end = src_track_start + bytesperframe * (uint64_t)trackinfo.frames;
 				uint64_t pad_track_start = src_track_end - ((uint64_t)m_toc.tracks[tracknum].padframes * bytesperframe);
+				uint64_t split_track_start = pad_track_start - ((uint64_t)m_toc.tracks[tracknum].splitframes * bytesperframe);
+
+				// dont split when split-bin read not required
+				if ((uint64_t)m_toc.tracks[tracknum].splitframes == 0L)
+					split_track_start = UINT64_MAX;
+
 				while (length_remaining != 0 && offset < endoffs)
 				{
 					// determine start of current frame
 					uint64_t src_frame_start = src_track_start + ((offset - startoffs) / CD_FRAME_SIZE) * bytesperframe;
+
+					// auto-advance next track for split-bin read
+					if (src_frame_start == split_track_start && m_lastfile.compare(m_info.track[tracknum+1].fname)!=0)
+					{
+						m_file.reset();
+						m_lastfile = m_info.track[tracknum+1].fname;
+						osd_file::error filerr = util::core_file::open(m_lastfile, OPEN_FLAG_READ, m_file);
+						if (filerr != osd_file::error::NONE)
+							report_error(1, "Error opening input file (%s)'", m_lastfile.c_str());
+					}
+
 					if (src_frame_start < src_track_end)
 					{
 						// read it in, or pad if we're into the padframes
@@ -408,7 +425,9 @@ public:
 						}
 						else
 						{
-							m_file->seek(src_frame_start, SEEK_SET);
+							m_file->seek((src_frame_start >= split_track_start)
+								? src_frame_start - split_track_start
+								: src_frame_start, SEEK_SET);
 							uint32_t count = m_file->read(dest, bytesperframe);
 							if (count != bytesperframe)
 								report_error(1, "Error reading input file (%s)'", m_lastfile.c_str());
@@ -507,7 +526,7 @@ public:
 				if (m_info.height == 524/2 || m_info.height == 624/2)
 				{
 					vbi_metadata vbi;
-					vbi_parse_all(&subbitmap.pix16(0), subbitmap.rowpixels(), subbitmap.width(), 8, &vbi);
+					vbi_parse_all(&subbitmap.pix(0), subbitmap.rowpixels(), subbitmap.width(), 8, &vbi);
 					vbi_metadata_pack(&m_ldframedata[framenum * VBI_PACKED_BYTES], framenum, &vbi);
 				}
 
@@ -2641,9 +2660,11 @@ static void do_extract_ld(parameters_map &params)
 			report_error(1, "Unable to open file (%s)", output_file_str->second->c_str());
 
 		// create the codec configuration
-		avhuff_decompress_config avconfig;
+		avhuff_decoder::config avconfig;
+		bitmap_yuy16 avvideo;
 		std::vector<int16_t> audio_data[16];
 		uint32_t actsamples;
+		avconfig.video = &avvideo;
 		avconfig.maxsamples = max_samples_per_frame;
 		avconfig.actsamples = &actsamples;
 		for (int chnum = 0; chnum < ARRAY_LENGTH(audio_data); chnum++)
@@ -2659,7 +2680,7 @@ static void do_extract_ld(parameters_map &params)
 			progress(framenum == input_start, "Extracting, %.1f%% complete...  \r", 100.0 * double(framenum - input_start) / double(input_end - input_start));
 
 			// set up the fake bitmap for this frame
-			avconfig.video.wrap(&fullbitmap.pix(framenum % interlace_factor), fullbitmap.width(), fullbitmap.height() / interlace_factor, fullbitmap.rowpixels() * interlace_factor);
+			avvideo.wrap(&fullbitmap.pix(framenum % interlace_factor), fullbitmap.width(), fullbitmap.height() / interlace_factor, fullbitmap.rowpixels() * interlace_factor);
 			input_chd.codec_configure(CHD_CODEC_AVHUFF, AVHUFF_CODEC_DECOMPRESS_CONFIG, &avconfig);
 
 			// read the hunk into the buffers

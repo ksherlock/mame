@@ -31,27 +31,12 @@ void kaneko16_state::video_start()
 template<class BitmapClass>
 void kaneko16_state::fill_bitmap(BitmapClass &bitmap, const rectangle &cliprect)
 {
-	int pen = 0;
+	const int pen = (m_kaneko_spr->get_sprite_type() == 1) ? 0x7f00 : 0;
 
-	if (m_kaneko_spr.found())
-	{
-		if (m_kaneko_spr->get_sprite_type() == 1)
-		{
-			pen = 0x7f00;
-		}
-	}
-
-	typename BitmapClass::pixel_t *dest;
-	(void)dest; // shut up Visual Studio
-	if (sizeof(*dest) == 2)
-	{
+	if (sizeof(typename BitmapClass::pixel_t) == 2)
 		bitmap.fill(pen, cliprect);
-	}
 	else
-	{
-		const pen_t *pal = m_palette->pens();
-		bitmap.fill(pal[pen], cliprect);
-	}
+		bitmap.fill(m_palette->pens()[pen], cliprect);
 }
 
 
@@ -132,7 +117,7 @@ void kaneko16_berlwall_state::video_start()
 				if ((r & 0x10) && (b & 0x10))
 				g = (g - 1) & 0x1f;     /* decrease with wraparound */
 
-				m_bg15_bitmap[screen].pix16(y, x) = ((g << 10) | (r << 5) | b) & 0x7fff;
+				m_bg15_bitmap[screen].pix(y, x) = ((g << 10) | (r << 5) | b) & 0x7fff;
 			}
 		}
 	}
@@ -197,16 +182,15 @@ void kaneko16_berlwall_state::render_15bpp_bitmap(bitmap_rgb32 &bitmap, const re
 		scrolly -= 0xff - 0x08;
 	}
 
-	const pen_t *pal = m_bgpalette->pens();
-	u16* srcbitmap;
-	u32* dstbitmap;
+	pen_t const *const pal = m_bgpalette->pens();
 
 	for (int y = cliprect.min_y; y <= cliprect.max_y; y++)
 	{
-		if (!flip)  srcbitmap = &m_bg15_bitmap[screen].pix16(        (y - scrolly) & 0xff  );
-		else        srcbitmap = &m_bg15_bitmap[screen].pix16( 255 - ((y - scrolly) & 0xff) );
+		u16 const *srcbitmap;
+		if (!flip)  srcbitmap = &m_bg15_bitmap[screen].pix(        (y - scrolly) & 0xff  );
+		else        srcbitmap = &m_bg15_bitmap[screen].pix( 255 - ((y - scrolly) & 0xff) );
 
-		dstbitmap = &bitmap.pix32(y);
+		u32 *const dstbitmap = &bitmap.pix(y);
 
 		for (int x = cliprect.min_x; x <= cliprect.max_x; x++)
 		{

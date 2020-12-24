@@ -45,7 +45,6 @@ TODO:
 #include "machine/6522via.h"
 #include "machine/nvram.h"
 #include "sound/dac.h"
-#include "sound/volt_reg.h"
 #include "bus/generic/slot.h"
 #include "bus/generic/carts.h"
 
@@ -67,6 +66,7 @@ public:
 		m_display(*this, "display"),
 		m_board(*this, "board"),
 		m_via(*this, "via"),
+		m_extram(*this, "extram", 0x800, ENDIANNESS_LITTLE),
 		m_dac(*this, "dac"),
 		m_cart(*this, "cartslot"),
 		m_inputs(*this, "IN.%u", 0)
@@ -90,6 +90,7 @@ private:
 	required_device<pwm_display_device> m_display;
 	required_device<sensorboard_device> m_board;
 	required_device<via6522_device> m_via;
+	memory_share_creator<u8> m_extram;
 	required_device<dac_bit_interface> m_dac;
 	optional_device<generic_slot_device> m_cart;
 	required_ioport_array<2> m_inputs;
@@ -154,7 +155,7 @@ DEVICE_IMAGE_LOAD_MEMBER(arb_state::cart_load)
 
 	// extra ram (optional)
 	if (image.get_feature("ram"))
-		m_maincpu->space(AS_PROGRAM).install_ram(0x0800, 0x0fff, 0x1000, nullptr);
+		m_maincpu->space(AS_PROGRAM).install_ram(0x0800, 0x0fff, 0x1000, m_extram);
 
 	return image_init_result::PASS;
 }
@@ -287,7 +288,6 @@ void arb_state::v2(machine_config &config)
 	/* sound hardware */
 	SPEAKER(config, "speaker").front_center();
 	DAC_1BIT(config, m_dac).add_route(ALL_OUTPUTS, "speaker", 0.25);
-	VOLTAGE_REGULATOR(config, "vref").add_route(0, "dac", 1.0, DAC_VREF_POS_INPUT);
 }
 
 void arb_state::arb(machine_config &config)

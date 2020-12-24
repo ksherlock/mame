@@ -103,7 +103,7 @@ int32_t bgfx_input_pair::texture_changed(int32_t id, std::string *str, int32_t n
 			file_name = file.substr(0, last_dot);
 		}
 
-		*str = string_format("%s", file_name.c_str());
+		*str = file_name;
 	}
 
 	return m_current_texture;
@@ -111,7 +111,7 @@ int32_t bgfx_input_pair::texture_changed(int32_t id, std::string *str, int32_t n
 
 void bgfx_input_pair::create_selection_slider(uint32_t screen_index)
 {
-	m_slider_state = make_unique_clear<slider_state>();
+	m_slider_state = std::make_unique<slider_state>();
 
 	m_slider_state->minval = 0;
 	m_slider_state->defval = m_current_texture;

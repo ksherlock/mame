@@ -50,6 +50,7 @@ public:
 		, m_tiles(*this, "tile")
 		, m_digits(*this, "digit%u", 0U)
 		, m_outs(*this, "out%u", 0U)
+		, m_throttle(*this, "THROTTLE")
 	{
 	}
 
@@ -64,13 +65,13 @@ public:
 
 	struct spoint_t
 	{
-		int32_t x, y;
+		int32_t x = 0, y = 0;
 	};
 
 	struct point_t
 	{
-		float x, y, z;
-		float xx, yy;
+		float x = 0, y = 0, z = 0;
+		float xx = 0, yy = 0;
 		spoint_t s;
 	};
 
@@ -339,6 +340,7 @@ private:
 	// I/O related
 	output_finder<2> m_digits;
 	output_finder<8> m_outs;
+	optional_ioport m_throttle;
 	u8 dpram_r(offs_t offset);
 	void gen_outputs_w(uint8_t data);
 	void vf_outputs_w(uint8_t data);

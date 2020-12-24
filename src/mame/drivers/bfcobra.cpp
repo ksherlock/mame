@@ -125,6 +125,8 @@
 #include "brkball.lh"
 
 
+namespace {
+
 /*
     Defines
 */
@@ -149,7 +151,7 @@ union ADDR_REG
 	struct { uint16_t hiword, loword ; } as16bit;
 	struct { uint8_t addr2, addr1, addr0; } as8bit;
 #endif
-	uint32_t addr;
+	uint32_t addr = 0;
 };
 
 /* Blitter register flag bits */
@@ -415,20 +417,16 @@ void bfcobra_state::video_start()
 
 uint32_t bfcobra_state::screen_update_bfcobra(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
-	int x, y;
-	uint8_t  *src;
-	uint32_t *dest;
-	uint32_t offset;
-	uint8_t *hirescol;
-	uint8_t *lorescol;
-
 	/* Select screen has to be programmed into two registers */
 	/* No idea what happens if the registers are different */
+	uint32_t offset;
 	if (m_flip_8 & 0x40 && m_flip_22 & 0x40)
 		offset = 0x10000;
 	else
 		offset = 0;
 
+	uint8_t const *hirescol;
+	uint8_t const *lorescol;
 	if(m_videomode & 0x20)
 	{
 		hirescol = m_col3bit;
@@ -445,16 +443,16 @@ uint32_t bfcobra_state::screen_update_bfcobra(screen_device &screen, bitmap_rgb3
 		lorescol = m_col8bit;
 	}
 
-	for (y = cliprect.top(); y <= cliprect.bottom(); ++y)
+	for (int y = cliprect.top(); y <= cliprect.bottom(); ++y)
 	{
 		uint16_t y_offset = (y + m_v_scroll) * 256;
-		src = &m_video_ram[offset + y_offset];
-		dest = &bitmap.pix32(y);
+		uint8_t const *const src = &m_video_ram[offset + y_offset];
+		uint32_t *dest = &bitmap.pix(y);
 
-		for (x = cliprect.left(); x <= cliprect.right() / 2; ++x)
+		for (int x = cliprect.left(); x <= cliprect.right() / 2; ++x)
 		{
-			uint8_t x_offset = x + m_h_scroll;
-			uint8_t pen = *(src + x_offset);
+			uint8_t const x_offset = x + m_h_scroll;
+			uint8_t const pen = *(src + x_offset);
 
 			if ( ( m_videomode & 0x81 ) == 1 || (m_videomode & 0x80 && pen & 0x80) )
 			{
@@ -2323,21 +2321,16 @@ void bfcobjam_state::chipset_w(offs_t offset, uint8_t data)
 
 uint32_t bfcobjam_state::screen_update_bfcobjam(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
-	int x, y;
-	uint8_t  *src;
-	uint32_t *dest;
-	uint32_t offset;
-	uint8_t *hirescol;
-	uint8_t *lorescol;
-
-
 	/* Select screen has to be programmed into two registers */
 	/* No idea what happens if the registers are different */
+	uint32_t offset;
 	if (m_flip_8 & 0x40 && m_flip_22 & 0x40)
 		offset = 0x10000;
 	else
 		offset = 0;
 
+	uint8_t const *hirescol;
+	uint8_t const *lorescol;
 	if(m_videomode & 0x20)
 	{
 		hirescol = m_col3bit;
@@ -2354,16 +2347,16 @@ uint32_t bfcobjam_state::screen_update_bfcobjam(screen_device &screen, bitmap_rg
 		lorescol = m_col8bit;
 	}
 
-	for (y = cliprect.top(); y <= cliprect.bottom(); ++y)
+	for (int y = cliprect.top(); y <= cliprect.bottom(); ++y)
 	{
-		uint16_t y_offset = (y + m_v_scroll) * 256;
-		src = &m_video_ram[offset + y_offset];
-		dest = &bitmap.pix32(y);
+		uint16_t const y_offset = (y + m_v_scroll) * 256;
+		uint8_t const *const src = &m_video_ram[offset + y_offset];
+		uint32_t *dest = &bitmap.pix(y);
 
-		for (x = cliprect.left(); x <= cliprect.right() / 2; ++x)
+		for (int x = cliprect.left(); x <= cliprect.right() / 2; ++x)
 		{
-			uint8_t x_offset = x + m_h_scroll;
-			uint8_t pen = *(src + x_offset);
+			uint8_t const x_offset = x + m_h_scroll;
+			uint8_t const pen = *(src + x_offset);
 
 			if ( ( m_videomode & 0x81 ) == 1 || (m_videomode & 0x80 && pen & 0x80) )
 			{
@@ -2990,6 +2983,9 @@ ROM_START( brkball )
 	ROM_REGION( 0x20000, "dm01:matrix", 0 )
 	ROM_LOAD("ledv1.bin",  0x00000, 0x10000, CRC(ea918cb9) SHA1(9e7047613cf1cb4b9a7fefb8a02d8479a7b09e6a))
 ROM_END
+
+} // Anonymous namespace
+
 
 GAME( 1989, inquiztr, 0,   bfcobra,          bfcobra, bfcobra_state, init_bfcobra, ROT0, "BFM",      "Inquizitor",                              MACHINE_NOT_WORKING )
 GAME( 1990, escounts, 0,   bfcobra,          bfcobra, bfcobra_state, init_bfcobra, ROT0, "BFM",      "Every Second Counts (39-360-053)",        MACHINE_IMPERFECT_GRAPHICS )

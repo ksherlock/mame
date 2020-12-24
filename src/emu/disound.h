@@ -77,11 +77,9 @@ public:
 	device_sound_interface &reset_routes() { m_route_list.clear(); return *this; }
 
 	// sound stream update overrides
-	virtual void sound_stream_update_legacy(sound_stream &stream, stream_sample_t const * const *inputs, stream_sample_t * const *outputs, int samples);
 	virtual void sound_stream_update(sound_stream &stream, std::vector<read_stream_view> const &inputs, std::vector<write_stream_view> &outputs);
 
 	// stream creation
-	sound_stream *stream_alloc_legacy(int inputs, int outputs, int sample_rate);
 	sound_stream *stream_alloc(int inputs, int outputs, int sample_rate);
 	sound_stream *stream_alloc(int inputs, int outputs, int sample_rate, sound_stream_flags flags);
 
@@ -111,10 +109,11 @@ protected:
 	std::vector<sound_route> m_route_list;      // list of sound routes
 	int             m_outputs;                  // number of outputs from this instance
 	int             m_auto_allocated_inputs;    // number of auto-allocated inputs targeting us
+	u32             m_specified_inputs_mask;    // mask of inputs explicitly specified (not counting auto-allocated)
 };
 
 // iterator
-typedef device_interface_iterator<device_sound_interface> sound_interface_iterator;
+typedef device_interface_enumerator<device_sound_interface> sound_interface_enumerator;
 
 
 
@@ -143,7 +142,7 @@ protected:
 };
 
 // iterator
-typedef device_interface_iterator<device_mixer_interface> mixer_interface_iterator;
+typedef device_interface_enumerator<device_mixer_interface> mixer_interface_enumerator;
 
 
 #endif // MAME_EMU_DISOUND_H

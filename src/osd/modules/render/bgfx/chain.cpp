@@ -78,10 +78,10 @@ void bgfx_chain::repopulate_targets()
 
 void bgfx_chain::process(chain_manager::screen_prim &prim, int view, int screen, texture_manager& textures, osd_window& window, uint64_t blend)
 {
-	screen_device_iterator screen_iterator(window.machine().root_device());
+	screen_device_enumerator screen_iterator(window.machine().root_device());
 	screen_device* screen_device = screen_iterator.byindex(screen);
 
-	uint16_t screen_count(window.target()->current_view().screen_count());
+	uint16_t screen_count(window.target()->current_view().visible_screen_count());
 	uint16_t screen_width = prim.m_quad_width;
 	uint16_t screen_height = prim.m_quad_height;
 	uint32_t rotation_type =

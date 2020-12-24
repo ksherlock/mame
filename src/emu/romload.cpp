@@ -192,7 +192,11 @@ chd_error do_open_disk(const emu_options &options, std::initializer_list<std::re
 
 const rom_entry *rom_first_region(const device_t &device)
 {
-	const rom_entry *romp = &device.rom_region_vector().front();
+	return rom_first_region(&device.rom_region_vector().front());
+}
+
+const rom_entry *rom_first_region(const rom_entry *romp)
+{
 	while (ROMENTRY_ISPARAMETER(romp) || ROMENTRY_ISSYSTEM_BIOS(romp) || ROMENTRY_ISDEFAULT_BIOS(romp))
 		romp++;
 	return !ROMENTRY_ISEND(romp) ? romp : nullptr;
@@ -407,7 +411,7 @@ void rom_load_manager::count_roms()
 	m_romstotalsize = 0;
 
 	/* loop over regions, then over files */
-	for (device_t &device : device_iterator(machine().config().root_device()))
+	for (device_t &device : device_enumerator(machine().config().root_device()))
 		for (region = rom_first_region(device); region != nullptr; region = rom_next_region(region))
 			for (rom = rom_first_file(region); rom != nullptr; rom = rom_next_file(rom))
 				if (ROM_GETBIOSFLAGS(rom) == 0 || ROM_GETBIOSFLAGS(rom) == device.system_bios())
@@ -1275,7 +1279,7 @@ void rom_load_manager::load_software_part_region(device_t &device, software_list
 		}
 
 		// remember the base and length
-		m_region = machine().memory().region_alloc(regiontag.c_str(), regionlength, width, endianness);
+		m_region = machine().memory().region_alloc(regiontag, regionlength, width, endianness);
 		LOG("Allocated %X bytes @ %p\n", m_region->bytes(), m_region->base());
 
 		if (ROMREGION_ISERASE(region)) // clear the region if it's requested
@@ -1334,7 +1338,7 @@ void rom_load_manager::load_software_part_region(device_t &device, software_list
 void rom_load_manager::process_region_list()
 {
 	// loop until we hit the end
-	device_iterator deviter(machine().root_device());
+	device_enumerator deviter(machine().root_device());
 	std::vector<std::string> searchpath;
 	for (device_t &device : deviter)
 	{
@@ -1418,10 +1422,21 @@ void rom_load_manager::process_region_list()
 
 rom_load_manager::rom_load_manager(running_machine &machine)
 	: m_machine(machine)
+	, m_warnings(0)
+	, m_knownbad(0)
+	, m_errors(0)
+	, m_romsloaded(0)
+	, m_romstotal(0)
+	, m_romsloadedsize(0)
+	, m_romstotalsize(0)
+	, m_chd_list()
+	, m_region(nullptr)
+	, m_errorstring()
+	, m_softwarningstring()
 {
 	// figure out which BIOS we are using
 	std::map<std::string, std::string> card_bios;
-	for (device_t &device : device_iterator(machine.config().root_device()))
+	for (device_t &device : device_enumerator(machine.config().root_device()))
 	{
 		device_slot_interface const *const slot(dynamic_cast<device_slot_interface *>(&device));
 		if (slot)

@@ -145,7 +145,7 @@ protected:
 	uint8_t update_tilemaps(screen_device &screen, const rectangle &cliprect);
 	void sprite_erase_buffer();
 	void sprite_swap_buffers();
-	int draw_one_sprite(uint16_t *data, int xoffs, int yoffs, const rectangle &clipin, const rectangle &clipout);
+	int draw_one_sprite(uint16_t const *data, int xoffs, int yoffs, const rectangle &clipin, const rectangle &clipout);
 	void sprite_render_list();
 	inline uint8_t compute_color_offsets(int which, int layerbit, int layerflag);
 	inline uint16_t compute_sprite_blend(uint8_t encoding);
@@ -209,10 +209,10 @@ protected:
 
 	required_shared_ptr<uint8_t> m_z80_shared_ram;
 	optional_shared_ptr<uint16_t> m_system32_workram;
-	required_shared_ptr<uint16_t> m_videoram;
-	required_shared_ptr<uint16_t> m_spriteram;
+	memory_share_creator<uint16_t> m_videoram;
+	memory_share_creator<uint16_t> m_spriteram;
 	optional_shared_ptr<uint8_t> m_soundram;
-	optional_shared_ptr_array<uint16_t, 2> m_paletteram;
+	memory_share_array_creator<uint16_t, 2> m_paletteram;
 
 	required_device<cpu_device> m_maincpu;
 	required_device<cpu_device> m_soundcpu;

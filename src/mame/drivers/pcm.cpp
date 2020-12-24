@@ -81,7 +81,6 @@ public:
 		, m_ctc_u(*this, "ctc_u")
 		, m_speaker(*this, "speaker")
 		, m_cass(*this, "cassette")
-		, m_vram(*this, "videoram")
 		, m_p_chargen(*this, "chargen")
 		, m_bank(*this, {"bankr", "bankw", "bank2", "bank3"})
 	{ }
@@ -110,7 +109,6 @@ private:
 	required_device<z80ctc_device> m_ctc_u;
 	required_device<speaker_sound_device> m_speaker;
 	required_device<cassette_image_device> m_cass;
-	optional_shared_ptr<u8> m_vram;
 	required_region_ptr<u8> m_p_chargen;
 	required_memory_bank_array<4> m_bank;
 };
@@ -222,8 +220,6 @@ void pcm_state::machine_start()
 	u8* r = m_ram->pointer();
 	u8 *m = memregion("maincpu")->base();
 
-	m_vram.set_target(r+0xf800, 0x800); // Fix position of vram
-
 	save_item(NAME(m_cone));
 	save_item(NAME(m_port85));
 
@@ -241,20 +237,19 @@ void pcm_state::machine_reset()
 
 u32 pcm_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect)
 {
-	u8 y,ra,chr,gfx;
-	u16 sy=0,ma=0x400,x;
+	u16 sy=0,ma=0x400;
 
-	for (y = 0; y < 16; y++)
+	for (u8 y = 0; y < 16; y++)
 	{
-		for (ra = 0; ra < 8; ra++)
+		for (u8 ra = 0; ra < 8; ra++)
 		{
-			u16 *p = &bitmap.pix16(sy++);
+			u16 *p = &bitmap.pix(sy++);
 
-			for (x = ma; x < ma + 64; x++)
+			for (u16 x = ma; x < ma + 64; x++)
 			{
-				chr = m_vram[x];
+				u8 const chr = m_ram->pointer()[x + 0xf800];
 
-				gfx = m_p_chargen[(chr<<3) | ra];
+				u8 const gfx = m_p_chargen[(chr<<3) | ra];
 
 				*p++ = BIT(gfx, 7);
 				*p++ = BIT(gfx, 6);

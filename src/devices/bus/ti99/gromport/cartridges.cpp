@@ -24,13 +24,14 @@
 #define LOG_WRITE        (1U<<7)   // Write operation
 #define LOG_GROM         (1U<<8)   // GROM access
 #define LOG_RPK          (1U<<9)   // RPK handler
+#define LOG_WARNW        (1U<<10)  // Warn when writing to cartridge space
 
 #define VERBOSE ( LOG_GENERAL | LOG_WARN )
 #include "logmacro.h"
 
 DEFINE_DEVICE_TYPE_NS(TI99_CART, bus::ti99::gromport, ti99_cartridge_device, "ti99cart", "TI-99 cartridge")
 
-namespace bus { namespace ti99 { namespace gromport {
+namespace bus::ti99::gromport {
 
 #define CARTGROM_TAG "grom_contents"
 #define CARTROM_TAG "rom_contents"
@@ -538,7 +539,9 @@ void ti99_cartridge_pcb::write(offs_t offset, uint8_t data)
 {
 	if (m_romspace_selected)
 	{
-		if (m_ram_ptr == nullptr) LOGMASKED(LOG_WARN, "Cannot write to cartridge ROM space at %04x\n", offset | 0x6000);
+		// Do not warn by default; devices like Horizon will create a lot of
+		// meaningless warnings at this point
+		if (m_ram_ptr == nullptr) LOGMASKED(LOG_WARNW, "Cannot write to cartridge ROM space at %04x\n", offset | 0x6000);
 		else
 		{
 			// Check if we have RAM in the ROM socket
@@ -1125,6 +1128,7 @@ void ti99_paged379i_cartridge::write(offs_t offset, uint8_t data)
   Cartridge type: paged378
   This type is intended for high-capacity cartridges of up to 512 KiB
   plus GROM space of 120KiB (not supported yet)
+  For smaller ROMs, the ROM is automatically mirrored in the bank space.
 
   Due to its huge GROM space it is also called the "UberGROM"
 
@@ -1157,7 +1161,10 @@ void ti99_paged378_cartridge::write(offs_t offset, uint8_t data)
 	// x = don't care, bbbb = bank
 	if (m_romspace_selected)
 	{
-		m_rom_page = ((offset >> 1)&0x003f);
+		// Auto-adapt to the size of the ROM
+		int mask = ((m_rom_size / 8192) - 1) & 0x3f;
+		m_rom_page = ((offset >> 1)&mask);
+
 		if ((offset & 1)==0)
 			LOGMASKED(LOG_BANKSWITCH, "Set ROM page = %d (writing to %04x)\n", m_rom_page, (offset | 0x6000));
 	}
@@ -1558,13 +1565,13 @@ void ti99_cartridge_device::rpk::close()
     not a network socket)
 ***************************************************************/
 
-ti99_cartridge_device::rpk_socket::rpk_socket(const char* id, int length, uint8_t* contents, std::string &&pathname)
-	: m_id(id), m_length(length), m_contents(contents), m_pathname(std::move(pathname))
+ti99_cartridge_device::rpk_socket::rpk_socket(const char* id, int length, std::unique_ptr<uint8_t []> &&contents, std::string &&pathname)
+	: m_id(id), m_length(length), m_contents(std::move(contents)), m_pathname(std::move(pathname))
 {
 }
 
-ti99_cartridge_device::rpk_socket::rpk_socket(const char* id, int length, uint8_t* contents)
-	: rpk_socket(id, length, contents, "")
+ti99_cartridge_device::rpk_socket::rpk_socket(const char* id, int length, std::unique_ptr<uint8_t []> &&contents)
+	: rpk_socket(id, length, std::move(contents), "")
 {
 }
 
@@ -1609,7 +1616,7 @@ std::unique_ptr<ti99_cartridge_device::rpk_socket> ti99_cartridge_device::rpk_re
 	util::archive_file::error ziperr;
 	uint32_t crc;
 	int length;
-	uint8_t* contents;
+	std::unique_ptr<uint8_t []> contents;
 	int header;
 
 	// find the file attribute (required)
@@ -1635,11 +1642,11 @@ std::unique_ptr<ti99_cartridge_device::rpk_socket> ti99_cartridge_device::rpk_re
 	length = zip.current_uncompressed_length();
 
 	// Allocate storage
-	contents = global_alloc_array_clear<uint8_t>(length);
-	if (contents==nullptr) throw rpk_exception(RPK_OUT_OF_MEMORY);
+	try { contents = make_unique_clear<uint8_t []>(length); }
+	catch (std::bad_alloc const &) { throw rpk_exception(RPK_OUT_OF_MEMORY); }
 
 	// and unzip file from the zip file
-	ziperr = zip.decompress(contents, length);
+	ziperr = zip.decompress(contents.get(), length);
 	if (ziperr != util::archive_file::error::NONE)
 	{
 		if (ziperr == util::archive_file::error::UNSUPPORTED) throw rpk_exception(RPK_ZIP_UNSUPPORTED);
@@ -1651,7 +1658,7 @@ std::unique_ptr<ti99_cartridge_device::rpk_socket> ti99_cartridge_device::rpk_re
 	if (sha1 != nullptr)
 	{
 		util::hash_collection actual_hashes;
-		actual_hashes.compute((const uint8_t *)contents, length, util::hash_collection::HASH_TYPES_CRC_SHA1);
+		actual_hashes.compute(contents.get(), length, util::hash_collection::HASH_TYPES_CRC_SHA1);
 
 		util::hash_collection expected_hashes;
 		expected_hashes.add_from_string(util::hash_collection::HASH_SHA1, sha1, strlen(sha1));
@@ -1660,7 +1667,7 @@ std::unique_ptr<ti99_cartridge_device::rpk_socket> ti99_cartridge_device::rpk_re
 	}
 
 	// Create a socket instance
-	return std::make_unique<rpk_socket>(socketname, length, contents);
+	return std::make_unique<rpk_socket>(socketname, length, std::move(contents));
 }
 
 /*
@@ -1673,7 +1680,7 @@ std::unique_ptr<ti99_cartridge_device::rpk_socket> ti99_cartridge_device::rpk_re
 	const char* ram_filename;
 	std::string ram_pname;
 	unsigned int length;
-	uint8_t* contents;
+	std::unique_ptr<uint8_t []> contents;
 
 	// find the length attribute
 	length_string = ram_resource_node->get_attribute_string("length", nullptr);
@@ -1701,8 +1708,8 @@ std::unique_ptr<ti99_cartridge_device::rpk_socket> ti99_cartridge_device::rpk_re
 	}
 
 	// Allocate memory for this resource
-	contents = global_alloc_array_clear<uint8_t>(length);
-	if (contents==nullptr) throw rpk_exception(RPK_OUT_OF_MEMORY);
+	try { contents = make_unique_clear<uint8_t []>(length); }
+	catch (std::bad_alloc const &) { throw rpk_exception(RPK_OUT_OF_MEMORY); }
 
 	LOGMASKED(LOG_RPK, "[RPK handler] Allocating RAM buffer (%d bytes) for socket '%s'\n", length, socketname);
 
@@ -1717,10 +1724,8 @@ std::unique_ptr<ti99_cartridge_device::rpk_socket> ti99_cartridge_device::rpk_re
 			// Get the file name (required if persistent)
 			ram_filename = ram_resource_node->get_attribute_string("file", nullptr);
 			if (ram_filename==nullptr)
-			{
-				global_free_array(contents);
 				throw rpk_exception(RPK_INVALID_RAM_SPEC, "<ram type='persistent'> must have a 'file' attribute");
-			}
+
 			ram_pname = std::string(system_name).append(PATH_SEPARATOR).append(ram_filename);
 			// load, and fill rest with 00
 			LOGMASKED(LOG_RPK, "[RPK handler] Loading NVRAM contents from '%s'\n", ram_pname.c_str());
@@ -1734,15 +1739,15 @@ std::unique_ptr<ti99_cartridge_device::rpk_socket> ti99_cartridge_device::rpk_re
 			osd_file::error filerr = file.open(ram_pname);
 			int bytes_read = 0;
 			if (filerr == osd_file::error::NONE)
-				bytes_read = file.read(contents, length);
+				bytes_read = file.read(contents.get(), length);
 
 			// fill remaining bytes (if necessary)
-			memset(((char *) contents) + bytes_read, 0x00, length - bytes_read);
+			std::fill_n(&contents[bytes_read], length - bytes_read, 0x00);
 		}
 	}
 
 	// Create a socket instance
-	return std::make_unique<rpk_socket>(socketname, length, contents, std::move(ram_pname));
+	return std::make_unique<rpk_socket>(socketname, length, std::move(contents), std::move(ram_pname));
 }
 
 /*-------------------------------------------------
@@ -1873,5 +1878,4 @@ ti99_cartridge_device::rpk* ti99_cartridge_device::rpk_reader::open(emu_options 
 	return newrpk;
 }
 
-} } } // end namespace bus::ti99::gromport
-
+} // end namespace bus::ti99::gromport

@@ -717,9 +717,11 @@ void lynx_state::lynx_blitter()
 				case 0x30: // width, height, tilt, stretch
 					m_blitter.tilt = lynx_read_ram(m_blitter.scb + SCB_TILT) | (lynx_read_ram(m_blitter.scb + SCB_TILT + 1) << 8);
 					m_blitter.memory_accesses+=2;
+					[[fallthrough]];
 				case 0x20: // width, height, stretch
 					m_blitter.stretch = lynx_read_ram(m_blitter.scb + SCB_STRETCH) | (lynx_read_ram(m_blitter.scb + SCB_STRETCH + 1) << 8);
 					m_blitter.memory_accesses+=2;
+					[[fallthrough]];
 				case 0x10: // width, height
 					m_blitter.width = lynx_read_ram(m_blitter.scb + SCB_SPRHSIZ) | (lynx_read_ram(m_blitter.scb + SCB_SPRHSIZ + 1) << 8);
 					m_blitter.height = lynx_read_ram(m_blitter.scb + SCB_SPRVSIZ) | (lynx_read_ram(m_blitter.scb + SCB_SPRVSIZ + 1) << 8);
@@ -1109,14 +1111,18 @@ void lynx_state::suzy_write(offs_t offset, uint8_t data)
 			break;
 		case HPOSSTRTL:
 			m_blitter.x_pos = data;
+			[[fallthrough]]; // FIXME: really?
 		case HPOSSTRTH:
 			m_blitter.x_pos &= 0xff;
 			m_blitter.x_pos |= data<<8;
+			[[fallthrough]]; // FIXME: really?
 		case VPOSSTRTL:
 			m_blitter.y_pos = data;
+			[[fallthrough]]; // FIXME: really?
 		case VPOSSTRTH:
 			m_blitter.y_pos &= 0xff;
 			m_blitter.y_pos |= data<<8;
+			[[fallthrough]]; // FIXME: really?
 		case SPRHSIZL:
 			m_blitter.width = data;
 			break;
@@ -1310,7 +1316,7 @@ void lynx_state::lynx_draw_line()
 	if (m_mikey.data[0x92] & 0x02)
 	{
 		j -= 160 * 102 / 2 - 1;
-		uint32_t *const line = &m_bitmap_temp.pix32(102 - 1 - y);
+		uint32_t *const line = &m_bitmap_temp.pix(102 - 1 - y);
 		for (int x = 160 - 2; x >= 0; j++, x -= 2)
 		{
 			uint8_t const byte = lynx_read_ram(j);
@@ -1320,7 +1326,7 @@ void lynx_state::lynx_draw_line()
 	}
 	else
 	{
-		uint32_t *const line = &m_bitmap_temp.pix32(y);
+		uint32_t *const line = &m_bitmap_temp.pix(y);
 		for (int x = 0; x < 160; j++, x += 2)
 		{
 			uint8_t const byte = lynx_read_ram(j);

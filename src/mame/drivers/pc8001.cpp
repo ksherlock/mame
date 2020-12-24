@@ -373,18 +373,17 @@ static const rgb_t PALETTE_PC8001[] =
 UPD3301_DRAW_CHARACTER_MEMBER( pc8001_state::pc8001_display_pixels )
 {
 	uint8_t data = m_char_rom->base()[(cc << 3) | lc];
-	int i;
 
 	if (lc >= 8) return;
 	if (csr) data = 0xff;
 
 	if (m_width80)
 	{
-		for (i = 0; i < 8; i++)
+		for (int i = 0; i < 8; i++)
 		{
 			int color = BIT(data, 7) ^ rvv;
 
-			bitmap.pix32(y, (sx * 8) + i) = PALETTE_PC8001[color ? 7 : 0];
+			bitmap.pix(y, (sx * 8) + i) = PALETTE_PC8001[color ? 7 : 0];
 
 			data <<= 1;
 		}
@@ -393,12 +392,12 @@ UPD3301_DRAW_CHARACTER_MEMBER( pc8001_state::pc8001_display_pixels )
 	{
 		if (sx % 2) return;
 
-		for (i = 0; i < 8; i++)
+		for (int i = 0; i < 8; i++)
 		{
 			int color = BIT(data, 7) ^ rvv;
 
-			bitmap.pix32(y, (sx/2 * 16) + (i * 2)) = PALETTE_PC8001[color ? 7 : 0];
-			bitmap.pix32(y, (sx/2 * 16) + (i * 2) + 1) = PALETTE_PC8001[color ? 7 : 0];
+			bitmap.pix(y, (sx/2 * 16) + (i * 2)) = PALETTE_PC8001[color ? 7 : 0];
+			bitmap.pix(y, (sx/2 * 16) + (i * 2) + 1) = PALETTE_PC8001[color ? 7 : 0];
 
 			data <<= 1;
 		}
@@ -440,7 +439,7 @@ void pc8001_state::machine_start()
 	uint8_t *ram = m_ram->pointer();
 
 	membank("bank1")->configure_entry(1, m_rom->base());
-	program.install_read_bank(0x0000, 0x5fff, "bank1");
+	program.install_read_bank(0x0000, 0x5fff, membank("bank1"));
 	program.unmap_write(0x0000, 0x5fff);
 
 	switch (m_ram->size())
@@ -449,22 +448,22 @@ void pc8001_state::machine_start()
 		membank("bank3")->configure_entry(0, ram);
 		program.unmap_readwrite(0x6000, 0xbfff);
 		program.unmap_readwrite(0x8000, 0xbfff);
-		program.install_readwrite_bank(0xc000, 0xffff, "bank3");
+		program.install_readwrite_bank(0xc000, 0xffff, membank("bank3"));
 		break;
 
 	case 32*1024:
 		membank("bank3")->configure_entry(0, ram);
 		program.unmap_readwrite(0x6000, 0xbfff);
-		program.install_readwrite_bank(0x8000, 0xffff, "bank3");
+		program.install_readwrite_bank(0x8000, 0xffff, membank("bank3"));
 		break;
 
 	case 64*1024:
 		membank("bank1")->configure_entry(0, ram);
 		membank("bank2")->configure_entry(0, ram + 0x6000);
 		membank("bank3")->configure_entry(0, ram + 0x8000);
-		program.install_readwrite_bank(0x0000, 0x5fff, "bank1");
-		program.install_readwrite_bank(0x6000, 0xbfff, "bank2");
-		program.install_readwrite_bank(0x8000, 0xffff, "bank3");
+		program.install_readwrite_bank(0x0000, 0x5fff, membank("bank1"));
+		program.install_readwrite_bank(0x6000, 0xbfff, membank("bank2"));
+		program.install_readwrite_bank(0x8000, 0xffff, membank("bank3"));
 		membank("bank2")->set_entry(0);
 		break;
 	}

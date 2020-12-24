@@ -531,16 +531,13 @@ VIDEO_START_MEMBER(galaxold_state,pisces)
 #ifdef UNUSED_FUNCTION
 void galaxold_state::theend_draw_bullets(bitmap_ind16 &bitmap, const rectangle &cliprect, int offs, int x, int y)
 {
-	int i;
-
-
 	/* same as Galaxian, but all bullets are yellow */
-	for (i = 0; i < 4; i++)
+	for (int i = 0; i < 4; i++)
 	{
 		x--;
 
 		if (cliprect.contains(x, y))
-			bitmap.pix16(y, x) = BULLETS_COLOR_BASE;
+			bitmap.pix(y, x) = BULLETS_COLOR_BASE;
 	}
 }
 
@@ -697,22 +694,6 @@ VIDEO_START_MEMBER(galaxold_state,harem)
 	m_color_mask = (m_gfxdecode->gfx(0)->granularity() == 4) ? 7 : 3;
 
 	m_modify_spritecode = &galaxold_state::harem_modify_spritecode;
-}
-
-VIDEO_START_MEMBER(galaxold_state,ozon1)
-{
-	VIDEO_START_CALL_MEMBER(galaxold_plain);
-
-	m_bg_tilemap->set_scrolldx(0, 384-256);
-}
-
-VIDEO_START_MEMBER(galaxold_state,bongo)
-{
-	VIDEO_START_CALL_MEMBER(galaxold_plain);
-
-	m_bg_tilemap->set_scrolldx(0, 384-256);
-
-	m_modify_spritecode = &galaxold_state::batman2_modify_spritecode;
 }
 
 TILE_GET_INFO_MEMBER(galaxold_state::dambustr_get_tile_info2)
@@ -1040,22 +1021,16 @@ void galaxold_state::drivfrcg_modify_color(uint8_t *color)
 
 void galaxold_state::galaxold_draw_bullets(bitmap_ind16 &bitmap, const rectangle &cliprect, int offs, int x, int y)
 {
-	int i;
-
-
-	for (i = 0; i < 4; i++)
+	for (int i = 0; i < 4; i++)
 	{
 		x--;
 
 		if (cliprect.contains(x, y))
 		{
-			int color;
-
-
 			/* yellow missile, white shells (this is the terminology on the schematics) */
-			color = ((offs == 7*4) ? BULLETS_COLOR_BASE : BULLETS_COLOR_BASE + 1);
+			int const color = ((offs == 7*4) ? BULLETS_COLOR_BASE : BULLETS_COLOR_BASE + 1);
 
-			bitmap.pix16(y, x) = color;
+			bitmap.pix(y, x) = color;
 		}
 	}
 }
@@ -1068,7 +1043,7 @@ void galaxold_state::scrambold_draw_bullets(bitmap_ind16 &bitmap, const rectangl
 
 	if (cliprect.contains(x, y))
 		/* yellow bullets */
-		bitmap.pix16(y, x) = BULLETS_COLOR_BASE;
+		bitmap.pix(y, x) = BULLETS_COLOR_BASE;
 }
 
 void galaxold_state::darkplnt_draw_bullets(bitmap_ind16 &bitmap, const rectangle &cliprect, int offs, int x, int y)
@@ -1078,32 +1053,32 @@ void galaxold_state::darkplnt_draw_bullets(bitmap_ind16 &bitmap, const rectangle
 	x = x - 6;
 
 	if (cliprect.contains(x, y))
-		bitmap.pix16(y, x) = 32 + m_darkplnt_bullet_color;
+		bitmap.pix(y, x) = 32 + m_darkplnt_bullet_color;
 }
 
 void galaxold_state::dambustr_draw_bullets(bitmap_ind16 &bitmap, const rectangle &cliprect, int offs, int x, int y)
 {
-	int i, color;
-
 	if (flip_screen_x())  x++;
 
 	x = x - 6;
 
 	/* bullets are 2 pixels wide */
-	for (i = 0; i < 2; i++)
+	for (int i = 0; i < 2; i++)
 	{
+		int color;
 		if (offs < 4*4)
 		{
 			color = BULLETS_COLOR_BASE;
 			y--;
 		}
-		else {
+		else
+		{
 			color = BULLETS_COLOR_BASE + 1;
 			x--;
 		}
 
 		if (cliprect.contains(x, y))
-			bitmap.pix16(y, x) = color;
+			bitmap.pix(y, x) = color;
 	}
 }
 
@@ -1368,7 +1343,7 @@ void galaxold_state::plot_star(bitmap_ind16 &bitmap, int x, int y, int color, co
 		y = 255 - y;
 
 	if (cliprect.contains(x, y))
-		bitmap.pix16(y, x) = m_stars_colors_start + color;
+		bitmap.pix(y, x) = m_stars_colors_start + color;
 }
 
 void galaxold_state::noop_draw_stars(bitmap_ind16 &bitmap, const rectangle &cliprect)
@@ -1745,22 +1720,4 @@ uint32_t galaxold_state::screen_update_dambustr(screen_device &screen, bitmap_in
 	};
 
 	return 0;
-}
-
-void galaxold_state::bagmanmc_modify_charcode(uint16_t *code, uint8_t x)
-{
-	*code |= (m_gfxbank[0] << 9);
-}
-
-void galaxold_state::bagmanmc_modify_spritecode(uint8_t *spriteram, int *code, int *flipx, int *flipy, int offs)
-{
-	*code |= (m_gfxbank[0] << 7) | 0x40;
-}
-
-VIDEO_START_MEMBER(galaxold_state,bagmanmc)
-{
-	VIDEO_START_CALL_MEMBER(galaxold);
-
-	m_modify_charcode = &galaxold_state::bagmanmc_modify_charcode;
-	m_modify_spritecode = &galaxold_state::bagmanmc_modify_spritecode;
 }

@@ -281,7 +281,7 @@ uint32_t midzeus_state::screen_update(screen_device &screen, bitmap_ind16 &bitma
 		int xoffs = screen.visible_area().min_x;
 		for (int y = cliprect.min_y; y <= cliprect.max_y; y++)
 		{
-			uint16_t *dest = &bitmap.pix16(y);
+			uint16_t *const dest = &bitmap.pix(y);
 			for (int x = cliprect.min_x; x <= cliprect.max_x; x++)
 				dest[x] = WAVERAM_READPIX(base, y, x - xoffs) & 0x7fff;
 		}
@@ -302,10 +302,10 @@ uint32_t midzeus_state::screen_update(screen_device &screen, bitmap_ind16 &bitma
 
 		for (int y = cliprect.min_y; y <= cliprect.max_y; y++)
 		{
-			uint16_t *dest = &bitmap.pix16(y);
+			uint16_t *const dest = &bitmap.pix(y);
 			for (int x = cliprect.min_x; x <= cliprect.max_x; x++)
 			{
-				uint8_t tex = get_texel_8bit(base, y, x, m_texel_width);
+				uint8_t const tex = get_texel_8bit(base, y, x, m_texel_width);
 				dest[x] = (tex << 8) | tex;
 			}
 		}
@@ -870,7 +870,6 @@ int midzeus_state::zeus_fifo_process(const uint32_t *data, int numwords)
 		/* 0x28: same for mk4b */
 		/* 0x30: same for invasn */
 		case 0x25:
-		{
 			/* 0x25 is used differently in mk4b. What determines this? */
 			if (m_is_mk4b)
 			{
@@ -879,7 +878,7 @@ int midzeus_state::zeus_fifo_process(const uint32_t *data, int numwords)
 
 				break;
 			}
-		}
+			[[fallthrough]];
 		case 0x28:
 		case 0x30:
 			if (numwords < 4 || ((data[0] & 0x808000) && numwords < 10))

@@ -281,7 +281,7 @@ uint8_t mtx_sdx_device::sdx_status_r()
 
 	uint8_t data = 0x00;
 
-	data |= m_dsw[BIT(m_control, 0)].read_safe(0x0f) & 0x0f;
+	data |= m_dsw[BIT(m_control, 0)]->read() & 0x0f;
 
 	data |= (m_floppy0->get_device() && m_floppy1->get_device()) ? 0x10 : 0x00;
 
@@ -417,7 +417,7 @@ MC6845_UPDATE_ROW(mtx_sdxcpm_device::crtc_update_row)
 
 			int color = BIT(data, 7) ? fg : bg;
 
-			bitmap.pix32(y, x) = pen[de ? color : 0];
+			bitmap.pix(y, x) = pen[de ? color : 0];
 
 			data <<= 1;
 		}

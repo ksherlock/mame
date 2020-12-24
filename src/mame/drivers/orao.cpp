@@ -14,12 +14,10 @@ Ctrl-V turns on keyclick
 Ctrl-S turns on reversed video
 
 BC starts BASIC. orao103: EXIT to quit. orao: unknown how to quit.
+To load use LMEM""
 
 Todo:
 - When pasting, shift key doesn't work
-- orao103: loads its own tapes, but can't load software items
-- orao: can't load anything
-
 
 ****************************************************************************/
 
@@ -240,7 +238,7 @@ u8 orao_state::kbd_r(offs_t offset)
 		case 0x03FE : return m_io_keyboard[18]->read();
 		case 0x03FF : return m_io_keyboard[19]->read();
 		/* Tape */
-		case 0x07FF : return (m_cassette->input() > 0.002) ? 0xff : 0;
+		case 0x07FF : return (m_cassette->input() >= 0) ? 0xff : 0;
 	}
 
 	return 0xff;
@@ -266,7 +264,7 @@ u32 orao_state::screen_update_orao(screen_device &screen, bitmap_ind16 &bitmap, 
 			u8 code = m_vram[addr++];
 			for (u8 b = 0; b < 8; b++)
 			{
-				bitmap.pix16(y, horpos++) =  (code >> b) & 0x01;
+				bitmap.pix(y, horpos++) =  (code >> b) & 0x01;
 			}
 		}
 	}

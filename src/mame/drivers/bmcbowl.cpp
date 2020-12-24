@@ -122,7 +122,7 @@ public:
 	bmcbowl_state(const machine_config &mconfig, device_type type, const char *tag) :
 		driver_device(mconfig, type, tag),
 		m_maincpu(*this, "maincpu"),
-		m_stats_ram(*this, "nvram", 16),
+		m_stats_ram(*this, "nvram"),
 		m_vid1(*this, "vid1"),
 		m_vid2(*this, "vid2"),
 		m_palette(*this, "palette"),
@@ -150,7 +150,7 @@ private:
 	void ramdac_map(address_map &map);
 
 	required_device<cpu_device> m_maincpu;
-	optional_shared_ptr<uint8_t> m_stats_ram;
+	required_shared_ptr<uint16_t> m_stats_ram;
 	required_shared_ptr<uint16_t> m_vid1;
 	required_shared_ptr<uint16_t> m_vid2;
 	required_device<palette_device> m_palette;
@@ -167,41 +167,42 @@ uint32_t bmcbowl_state::screen_update(screen_device &screen, bitmap_rgb32 &bitma
         missing scroll and priorities   (maybe fixed ones)
 */
 
-	int x,y,z,pixdat;
 	bitmap.fill(rgb_t::black(), cliprect);
 
-	z=0;
-	for (y=0;y<230;y++)
+	int z=0;
+	for (int y=0; y<230; y++)
 	{
-		for (x=0;x<280;x+=2)
+		for (int x=0; x<280; x+=2)
 		{
+			int pixdat;
+
 			pixdat = m_vid2[0x8000+z];
 
 			if(pixdat&0xff)
-				bitmap.pix32(y, x+1) = m_palette->pen(pixdat&0xff);
+				bitmap.pix(y, x+1) = m_palette->pen(pixdat&0xff);
 			if(pixdat>>8)
-				bitmap.pix32(y, x) = m_palette->pen(pixdat>>8);
+				bitmap.pix(y, x) = m_palette->pen(pixdat>>8);
 
 			pixdat = m_vid2[z];
 
 			if(pixdat&0xff)
-				bitmap.pix32(y, x+1) = m_palette->pen(pixdat&0xff);
+				bitmap.pix(y, x+1) = m_palette->pen(pixdat&0xff);
 			if(pixdat>>8)
-				bitmap.pix32(y, x) = m_palette->pen(pixdat>>8);
+				bitmap.pix(y, x) = m_palette->pen(pixdat>>8);
 
 			pixdat = m_vid1[0x8000+z];
 
 			if(pixdat&0xff)
-				bitmap.pix32(y, x+1) = m_palette->pen(pixdat&0xff);
+				bitmap.pix(y, x+1) = m_palette->pen(pixdat&0xff);
 			if(pixdat>>8)
-				bitmap.pix32(y, x) = m_palette->pen(pixdat>>8);
+				bitmap.pix(y, x) = m_palette->pen(pixdat>>8);
 
 			pixdat = m_vid1[z];
 
 			if(pixdat&0xff)
-				bitmap.pix32(y, x+1) = m_palette->pen(pixdat&0xff);
+				bitmap.pix(y, x+1) = m_palette->pen(pixdat&0xff);
 			if(pixdat>>8)
-				bitmap.pix32(y, x) = m_palette->pen(pixdat>>8);
+				bitmap.pix(y, x) = m_palette->pen(pixdat>>8);
 
 			z++;
 		}
@@ -291,7 +292,7 @@ static const uint8_t bmc_nv3[]=
 void bmcbowl_state::init_stats(const uint8_t *table, int table_len, int address)
 {
 	for (int i = 0; i < table_len; i++)
-		m_stats_ram[address+2*i]=table[i];
+		m_stats_ram[address+i] = 0xff00 | table[i];
 }
 #endif
 
@@ -308,12 +309,12 @@ void bmcbowl_state::machine_start()
 void bmcbowl_state::machine_reset()
 {
 #ifdef NVRAM_HACK
-	for (int i = 0; i < m_stats_ram.bytes(); i++)
-		m_stats_ram[i] = 0xff;
+	for (int i = 0; i < m_stats_ram.bytes()/2; i++)
+		m_stats_ram[i] = 0xffff;
 
 	init_stats(bmc_nv1,ARRAY_LENGTH(bmc_nv1),0);
-	init_stats(bmc_nv2,ARRAY_LENGTH(bmc_nv2),0x3b0);
-	init_stats(bmc_nv3,ARRAY_LENGTH(bmc_nv3),0xfe2);
+	init_stats(bmc_nv2,ARRAY_LENGTH(bmc_nv2),0x3b0/2);
+	init_stats(bmc_nv3,ARRAY_LENGTH(bmc_nv3),0xfe2/2);
 #endif
 }
 

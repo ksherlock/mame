@@ -115,12 +115,12 @@ video_manager::video_manager(running_machine &machine)
 	// extract initial execution state from global configuration settings
 	update_refresh_speed();
 
-	const unsigned screen_count(screen_device_iterator(machine.root_device()).count());
+	const unsigned screen_count(screen_device_enumerator(machine.root_device()).count());
 	const bool no_screens(!screen_count);
 
 	// create a render target for snapshots
 	const char *viewname = machine.options().snap_view();
-	m_snap_native = !no_screens && (viewname[0] == 0 || strcmp(viewname, "native") == 0);
+	m_snap_native = !no_screens && !strcmp(viewname, "native");
 
 	if (m_snap_native)
 	{
@@ -263,7 +263,7 @@ void video_manager::frame_update(bool from_debugger)
 	if (phase == machine_phase::RUNNING)
 	{
 		// reset partial updates if we're paused or if the debugger is active
-		screen_device *const screen = screen_device_iterator(machine().root_device()).first();
+		screen_device *const screen = screen_device_enumerator(machine().root_device()).first();
 		bool const debugger_enabled = machine().debug_flags & DEBUG_FLAG_ENABLED;
 		bool const within_instruction_hook = debugger_enabled && machine().debugger().within_instruction_hook();
 		if (screen && ((machine().paused() && machine().options().update_in_pause()) || from_debugger || within_instruction_hook))
@@ -304,7 +304,7 @@ std::string video_manager::speed_text()
 
 	// display the number of partial updates as well
 	int partials = 0;
-	for (screen_device &screen : screen_device_iterator(machine().root_device()))
+	for (screen_device &screen : screen_device_enumerator(machine().root_device()))
 		partials += screen.partial_updates();
 	if (partials > 1)
 		util::stream_format(str, "\n%d partial updates", partials);
@@ -329,16 +329,16 @@ void video_manager::save_snapshot(screen_device *screen, emu_file &file)
 	// add two text entries describing the image
 	std::string text1 = std::string(emulator_info::get_appname()).append(" ").append(emulator_info::get_build_version());
 	std::string text2 = std::string(machine().system().manufacturer).append(" ").append(machine().system().type.fullname());
-	png_info pnginfo;
-	pnginfo.add_text("Software", text1.c_str());
-	pnginfo.add_text("System", text2.c_str());
+	util::png_info pnginfo;
+	pnginfo.add_text("Software", text1);
+	pnginfo.add_text("System", text2);
 
 	// now do the actual work
 	const rgb_t *palette = (screen != nullptr && screen->has_palette()) ? screen->palette().palette()->entry_list_adjusted() : nullptr;
 	int entries = (screen != nullptr && screen->has_palette()) ? screen->palette().entries() : 0;
-	png_error error = png_write_bitmap(file, &pnginfo, m_snap_bitmap, entries, palette);
-	if (error != PNGERR_NONE)
-		osd_printf_error("Error generating PNG for snapshot: png_error = %d\n", error);
+	util::png_error error = util::png_write_bitmap(file, &pnginfo, m_snap_bitmap, entries, palette);
+	if (error != util::png_error::NONE)
+		osd_printf_error("Error generating PNG for snapshot: png_error = %d\n", std::underlying_type_t<util::png_error>(error));
 }
 
 
@@ -349,11 +349,10 @@ void video_manager::save_snapshot(screen_device *screen, emu_file &file)
 
 void video_manager::save_active_screen_snapshots()
 {
-	// if we're native, then write one snapshot per visible screen
 	if (m_snap_native)
 	{
-		// write one snapshot per visible screen
-		for (screen_device &screen : screen_device_iterator(machine().root_device()))
+		// if we're native, then write one snapshot per visible screen
+		for (screen_device &screen : screen_device_enumerator(machine().root_device()))
 			if (machine().render().is_live(screen))
 			{
 				emu_file file(machine().options().snapshot_directory(), OPEN_FLAG_WRITE | OPEN_FLAG_CREATE | OPEN_FLAG_CREATE_PATHS);
@@ -362,10 +361,9 @@ void video_manager::save_active_screen_snapshots()
 					save_snapshot(&screen, file);
 			}
 	}
-
-	// otherwise, just write a single snapshot
 	else
 	{
+		// otherwise, just write a single snapshot
 		emu_file file(machine().options().snapshot_directory(), OPEN_FLAG_WRITE | OPEN_FLAG_CREATE | OPEN_FLAG_CREATE_PATHS);
 		osd_file::error filerr = open_next(file, "png");
 		if (filerr == osd_file::error::NONE)
@@ -426,13 +424,13 @@ void video_manager::begin_recording_screen(const std::string &filename, uint32_t
 	// create the emu_file
 	bool is_absolute_path = !filename.empty() && osd_is_absolute_path(filename);
 	std::unique_ptr<emu_file> movie_file = std::make_unique<emu_file>(
-		is_absolute_path ? "" : machine().options().snapshot_directory(),
-		OPEN_FLAG_WRITE | OPEN_FLAG_CREATE | OPEN_FLAG_CREATE_PATHS);
+			is_absolute_path ? "" : machine().options().snapshot_directory(),
+			OPEN_FLAG_WRITE | OPEN_FLAG_CREATE | OPEN_FLAG_CREATE_PATHS);
 
 	// and open the actual file
 	osd_file::error filerr = filename.empty()
-		? open_next(*movie_file, extension)
-		: movie_file->open(filename);
+			? open_next(*movie_file, extension)
+			: movie_file->open(filename);
 	if (filerr != osd_file::error::NONE)
 	{
 		osd_printf_error("Error creating movie, osd_file::error=%d\n", int(filerr));
@@ -455,8 +453,8 @@ void video_manager::begin_recording_screen(const std::string &filename, uint32_t
 void video_manager::begin_recording(const char *name, movie_recording::format format)
 {
 	// create a snapshot bitmap so we know what the target size is
-	screen_device_iterator iterator = screen_device_iterator(machine().root_device());
-	screen_device_iterator::auto_iterator iter = iterator.begin();
+	screen_device_enumerator iterator(machine().root_device());
+	screen_device_enumerator::iterator iter(iterator.begin());
 	uint32_t count = (uint32_t)iterator.count();
 	const bool no_screens(!count);
 
@@ -554,16 +552,6 @@ void video_manager::postload()
 
 
 //-------------------------------------------------
-//  is_recording - returns whether or not any
-//  screen is currently recording
-//-------------------------------------------------
-
-bool video_manager::is_recording() const
-{
-	return !m_movie_recordings.empty();
-}
-
-//-------------------------------------------------
 //  effective_autoframeskip - return the effective
 //  autoframeskip value, accounting for fast
 //  forward
@@ -637,7 +625,7 @@ inline int video_manager::original_speed_setting() const
 bool video_manager::finish_screen_updates()
 {
 	// finish updating the screens
-	screen_device_iterator iter(machine().root_device());
+	screen_device_enumerator iter(machine().root_device());
 
 	bool has_live_screen = false;
 	for (screen_device &screen : iter)
@@ -953,7 +941,7 @@ void video_manager::update_refresh_speed()
 			// find the screen with the shortest frame period (max refresh rate)
 			// note that we first check the token since this can get called before all screens are created
 			attoseconds_t min_frame_period = ATTOSECONDS_PER_SECOND;
-			for (screen_device &screen : screen_device_iterator(machine().root_device()))
+			for (screen_device &screen : screen_device_enumerator(machine().root_device()))
 			{
 				attoseconds_t period = screen.frame_period().attoseconds();
 				if (period != 0)
@@ -1056,7 +1044,7 @@ void video_manager::create_snapshot_bitmap(screen_device *screen)
 	// select the appropriate view in our dummy target
 	if (m_snap_native && screen != nullptr)
 	{
-		screen_device_iterator iter(machine().root_device());
+		screen_device_enumerator iter(machine().root_device());
 		int view_index = iter.indexof(*screen);
 		assert(view_index != -1);
 		m_snap_target->set_view(view_index);
@@ -1075,9 +1063,9 @@ void video_manager::create_snapshot_bitmap(screen_device *screen)
 	render_primitive_list &primlist = m_snap_target->get_primitives();
 	primlist.acquire_lock();
 	if (machine().options().snap_bilinear())
-		snap_renderer_bilinear::draw_primitives(primlist, &m_snap_bitmap.pix32(0), width, height, m_snap_bitmap.rowpixels());
+		snap_renderer_bilinear::draw_primitives(primlist, &m_snap_bitmap.pix(0), width, height, m_snap_bitmap.rowpixels());
 	else
-		snap_renderer::draw_primitives(primlist, &m_snap_bitmap.pix32(0), width, height, m_snap_bitmap.rowpixels());
+		snap_renderer::draw_primitives(primlist, &m_snap_bitmap.pix(0), width, height, m_snap_bitmap.rowpixels());
 	primlist.release_lock();
 }
 
@@ -1175,7 +1163,7 @@ osd_file::error video_manager::open_next(emu_file &file, const char *extension, 
 			//printf("check template: %s\n", snapdevname.c_str());
 
 			// verify that there is such a device for this system
-			for (device_image_interface &image : image_interface_iterator(machine().root_device()))
+			for (device_image_interface &image : image_interface_enumerator(machine().root_device()))
 			{
 				// get the device name
 				std::string tempdevname(image.brief_instance_name());

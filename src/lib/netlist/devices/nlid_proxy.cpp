@@ -12,10 +12,7 @@
 
 #include <array>
 
-namespace netlist
-{
-	namespace devices
-	{
+namespace netlist::devices {
 
 	// -----------------------------------------------------------------------------
 	// nld_base_proxy
@@ -124,19 +121,9 @@ namespace netlist
 	{
 		register_subalias("Q", "RN.1");
 
-		log().verbose("D/A Proxy: Found power terminals on device {1}", out_proxied->device().name());
-		if (anetlist.is_extended_validation())
-		{
-			// During validation, don't connect to terminals found
-			// This will cause terminals not connected to a rail net to
-			// fail connection stage.
-			connect(m_RN.N(), m_RP.P());
-		}
-		else
-		{
-			connect(m_RN.N(), *m_tn);
-			connect(m_RP.P(), *m_tp);
-		}
+		connect(m_RN.N(), *m_tn);
+		connect(m_RP.P(), *m_tp);
+
 		connect(m_RN.P(), m_RP.N());
 	}
 
@@ -194,6 +181,4 @@ namespace netlist
 		}
 	}
 
-
-	} //namespace devices
-} // namespace netlist
+} // namespace netlist::devices

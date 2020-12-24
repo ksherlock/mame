@@ -53,7 +53,7 @@ void primo_state::update_memory()
 			membank("bank1")->set_base(m_cart2_rom->base());
 			break;
 		case 0x02:  /* RAM */
-			space.install_write_bank(0x0000, 0x3fff, "bank1");
+			space.install_write_bank(0x0000, 0x3fff, membank("bank1"));
 			membank("bank1")->set_base(memregion("maincpu")->base());
 			break;
 		case 0x03:  /* EPROM extension 2 */
@@ -340,7 +340,7 @@ u32 primo_state::screen_update(screen_device &screen, bitmap_ind16 &bitmap, cons
 
 	for (u8 y = 0; y < 192; y++)
 	{
-		u16 *p = &bitmap.pix16(y);
+		u16 *p = &bitmap.pix(y);
 		for (u16 x = 0; x < 32; x++)
 		{
 			u8 data = m_vram[ma+x];

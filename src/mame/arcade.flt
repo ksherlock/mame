@@ -230,6 +230,7 @@ cidelsa.cpp
 cinemat.cpp
 circus.cpp
 circusc.cpp
+cirsa820xxx.cpp
 cischeat.cpp
 citycon.cpp
 clayshoo.cpp
@@ -258,6 +259,7 @@ cops.cpp
 copsnrob.cpp
 corona.cpp
 cosmic.cpp
+cowtipping.cpp
 cps1.cpp
 cps1bl_5205.cpp
 cps1bl_pic.cpp
@@ -639,10 +641,12 @@ konamigx.cpp
 konamim2.cpp
 konblands.cpp
 konendev.cpp
+kongs470.cpp
 konmedal.cpp
 konmedal68k.cpp
 kontest.cpp
 kopunch.cpp
+kpython.cpp
 ksayakyu.cpp
 ksys573.cpp
 kungfur.cpp
@@ -939,6 +943,7 @@ phoenix.cpp
 photon.cpp
 photon2.cpp
 photoply.cpp
+photoplysx.cpp
 piggypas.cpp
 pinball2k.cpp
 pingpong.cpp
@@ -988,7 +993,6 @@ pturn.cpp
 pubtimed.cpp
 puckpkmn.cpp
 punchout.cpp
-pyson.cpp
 pzletime.cpp
 qdrmfgp.cpp
 qix.cpp
@@ -1025,6 +1029,7 @@ relief.cpp
 renegade.cpp
 retofinv.cpp
 rfslots8085.cpp
+rfslotspcpent.cpp
 rgum.cpp
 rltennis.cpp
 rmhaihai.cpp
@@ -1352,6 +1357,7 @@ tutankhm.cpp
 tvcapcom.cpp
 tvg01.cpp
 twin16.cpp
+twinbskt.cpp
 twincobr.cpp
 twinkle.cpp
 twins.cpp
@@ -1416,6 +1422,7 @@ white_mod.cpp
 wico.cpp
 wildpkr.cpp
 williams.cpp
+winbingo.cpp
 wink.cpp
 wiping.cpp
 witch.cpp

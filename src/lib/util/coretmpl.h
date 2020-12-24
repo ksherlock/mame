@@ -25,6 +25,7 @@
 #include <list>
 #include <map>
 #include <memory>
+#include <numeric>
 #include <set>
 #include <stdexcept>
 #include <tuple>
@@ -202,7 +203,7 @@ public:
 				if (m_tail == &toreplace)
 					m_tail = &object;
 				object.m_next = toreplace.m_next;
-				global_free(&toreplace);
+				delete &toreplace;
 				return object;
 			}
 		return append(object);
@@ -253,7 +254,7 @@ public:
 	// remove the given object and free its memory
 	void remove(ElementType &object) noexcept
 	{
-		global_free(&detach(object));
+		delete &detach(object);
 	}
 
 	// find an object by index in the list
@@ -305,7 +306,7 @@ public:
 	{
 		ItemType *result = m_freelist.detach_head();
 		if (result == nullptr)
-			result = global_alloc(ItemType);
+			result = new ItemType;
 		return result;
 	}
 
@@ -1050,18 +1051,11 @@ constexpr std::enable_if_t<std::is_signed<T>::value, T> iabs(T v) noexcept
 }
 
 
-// returns greatest common divisor of a and b using the Euclidean algorithm
-template <typename M, typename N>
-constexpr std::common_type_t<M, N> euclid_gcd(M a, N b)
-{
-	return b ? euclid_gcd(b, a % b) : a;
-}
-
 // reduce a fraction
 template <typename M, typename N>
 inline void reduce_fraction(M &num, N &den)
 {
-	auto const div(euclid_gcd(num, den));
+	auto const div(std::gcd(num, den));
 	if (div)
 	{
 		num /= div;
@@ -1069,6 +1063,6 @@ inline void reduce_fraction(M &num, N &den)
 	}
 }
 
-}; // namespace util
+} // namespace util
 
 #endif // MAME_UTIL_CORETMPL_H

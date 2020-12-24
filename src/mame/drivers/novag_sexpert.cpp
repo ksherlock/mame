@@ -26,6 +26,9 @@ To distinguish between versions, press the Set Level button.
 Note that the H8 option doesn't appear to work with sexperta2, but when doing a
 hex compare with sexperta, the program differences are minor.
 
+To identify C program version, start MAME with -rs232 terminal, and afterwards,
+input I followed by Enter.
+
 TODO:
 - use W65C802 device for version B/C? it works ok but this cpu core emulation is
   not as accurate, and the program doesn't enable extended mode (in other words,
@@ -217,7 +220,7 @@ HD44780_PIXEL_UPDATE(sexpert_state::lcd_pixel_update)
 	if (line < 2 && pos < 8)
 	{
 		// internal: (8+8)*1, external: 1*16
-		bitmap.pix16(1 + y, 1 + line*8*6 + pos*6 + x) = state ? 1 : 2;
+		bitmap.pix(1 + y, 1 + line*8*6 + pos*6 + x) = state ? 1 : 2;
 	}
 }
 
@@ -606,12 +609,12 @@ CONS( 1988, sexperta,  0,        0, sexpert,  sexpert,  sexpert_state, init_sexp
 CONS( 1987, sexperta1, sexperta, 0, sexpert,  sexpert,  sexpert_state, init_sexpert, "Novag", "Super Expert (version A, set 2)", MACHINE_SUPPORTS_SAVE | MACHINE_CLICKABLE_ARTWORK ) // 878
 CONS( 1987, sexperta2, sexperta, 0, sexpert,  sexpert,  sexpert_state, init_sexpert, "Novag", "Super Expert (version A, set 3)", MACHINE_SUPPORTS_SAVE | MACHINE_CLICKABLE_ARTWORK ) // 878
 CONS( 1988, sexpertb,  sexperta, 0, sexpertb, sexpertb, sexpert_state, init_sexpert, "Novag", "Super Expert (version B)", MACHINE_SUPPORTS_SAVE | MACHINE_CLICKABLE_ARTWORK ) // 887
-CONS( 1990, sexpertc,  sexperta, 0, sexpertb, sexpertb, sexpert_state, init_sexpert, "Novag", "Super Expert (version C, V3.6)", MACHINE_SUPPORTS_SAVE | MACHINE_CLICKABLE_ARTWORK )
-CONS( 1990, sexpertc1, sexperta, 0, sexpertb, sexpertb, sexpert_state, init_sexpert, "Novag", "Super Expert (version C, V3.0)", MACHINE_SUPPORTS_SAVE | MACHINE_CLICKABLE_ARTWORK ) // 902
+CONS( 1990, sexpertc,  sexperta, 0, sexpertb, sexpertb, sexpert_state, init_sexpert, "Novag", "Super Expert (version C, v3.6)", MACHINE_SUPPORTS_SAVE | MACHINE_CLICKABLE_ARTWORK )
+CONS( 1990, sexpertc1, sexperta, 0, sexpertb, sexpertb, sexpert_state, init_sexpert, "Novag", "Super Expert (version C, v3.0)", MACHINE_SUPPORTS_SAVE | MACHINE_CLICKABLE_ARTWORK ) // 902
 
 CONS( 1987, sfortea,   0,        0, sforte,   sexpert,  sforte_state,  init_sexpert, "Novag", "Super Forte (version A, set 1)", MACHINE_SUPPORTS_SAVE | MACHINE_CLICKABLE_ARTWORK )
 CONS( 1987, sfortea1,  sfortea,  0, sforte,   sexpert,  sforte_state,  init_sexpert, "Novag", "Super Forte (version A, set 2)", MACHINE_SUPPORTS_SAVE | MACHINE_CLICKABLE_ARTWORK )
 CONS( 1987, sfortea2,  sfortea,  0, sforte,   sexpert,  sforte_state,  init_sexpert, "Novag", "Super Forte (version A, set 3)", MACHINE_SUPPORTS_SAVE | MACHINE_CLICKABLE_ARTWORK )
 CONS( 1988, sforteb,   sfortea,  0, sforteb,  sexpertb, sforte_state,  init_sexpert, "Novag", "Super Forte (version B)", MACHINE_SUPPORTS_SAVE | MACHINE_CLICKABLE_ARTWORK )
-CONS( 1990, sfortec,   sfortea,  0, sforteb,  sexpertb, sforte_state,  init_sexpert, "Novag", "Super Forte (version C, V3.6)", MACHINE_SUPPORTS_SAVE | MACHINE_CLICKABLE_ARTWORK )
-CONS( 1990, sfortec1,  sfortea,  0, sforteb,  sexpertb, sforte_state,  init_sexpert, "Novag", "Super Forte (version C, V1.2)", MACHINE_SUPPORTS_SAVE | MACHINE_CLICKABLE_ARTWORK )
+CONS( 1990, sfortec,   sfortea,  0, sforteb,  sexpertb, sforte_state,  init_sexpert, "Novag", "Super Forte (version C, v3.6)", MACHINE_SUPPORTS_SAVE | MACHINE_CLICKABLE_ARTWORK )
+CONS( 1990, sfortec1,  sfortea,  0, sforteb,  sexpertb, sforte_state,  init_sexpert, "Novag", "Super Forte (version C, v1.2)", MACHINE_SUPPORTS_SAVE | MACHINE_CLICKABLE_ARTWORK )

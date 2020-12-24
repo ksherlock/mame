@@ -23,8 +23,7 @@ ROM_END
 
 DEFINE_DEVICE_TYPE_NS(HPDIO_98543, bus::hp_dio, dio16_98543_device, "dio98543", "HP98543 medium-res color DIO video card")
 
-namespace bus {
-	namespace hp_dio {
+namespace bus::hp_dio {
 
 void dio16_98543_device::device_add_mconfig(machine_config &config)
 {
@@ -90,8 +89,8 @@ dio16_98543_device::dio16_98543_device(const machine_config &mconfig, device_typ
 	m_nereid(*this, "nereid"),
 	m_space_config("vram", ENDIANNESS_BIG, 8, 19, 0, address_map_constructor(FUNC(dio16_98543_device::map), this)),
 	m_rom(*this, HP98543_ROM_REGION),
-	m_vram(*this, "vram")
-
+	m_vram(*this, "vram"),
+	m_intreg(0)
 {
 }
 
@@ -99,7 +98,6 @@ void dio16_98543_device::device_start()
 {
 	save_item(NAME(m_intreg));
 	save_item(NAME(m_ints));
-	m_intreg = 0;
 
 	dio().install_memory(
 			0x200000, 0x27ffff,
@@ -122,6 +120,7 @@ void dio16_98543_device::device_start()
 
 void dio16_98543_device::device_reset()
 {
+	m_intreg = 0;
 }
 
 uint16_t dio16_98543_device::rom_r(offs_t offset)
@@ -235,7 +234,7 @@ uint32_t dio16_98543_device::screen_update(screen_device &screen, bitmap_rgb32 &
 	}
 
 	for (int y = 0; y < m_v_pix; y++) {
-		uint32_t *scanline = &bitmap.pix32(y);
+		uint32_t *scanline = &bitmap.pix(y);
 
 		for (int x = 0; x < m_h_pix; x++) {
 			uint8_t tmp = m_vram[y * m_h_pix + x];
@@ -253,4 +252,3 @@ uint32_t dio16_98543_device::screen_update(screen_device &screen, bitmap_rgb32 &
 }
 
 } // namespace bus::hp_dio
-} // namespace bus
