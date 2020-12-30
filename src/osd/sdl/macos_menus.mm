@@ -56,7 +56,7 @@
 	_machine->toggle_pause();
 }
 -(void)toggleThrottle:(id)sender {
-	_machine->video().toggle_throttle();	
+	_machine->video().set_throttled(!_machine->video().throttled());	
 }
 -(void)toggleKeyboard:(id)sender {
 	_machine->set_ui_active(!_machine->ui_active());	
