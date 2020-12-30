@@ -10,6 +10,7 @@
 
 #include "../../emu/emu.h"
 #include "../../emu/emuopts.h"
+#include "../../emu/softlist.h"
 #include "osdcomm.h"
 #include <wchar.h>
 #include <string>
@@ -328,7 +329,7 @@ void vgm_start(running_machine &machine)
 	
 	// Get the Game Information and write the GD3 Tag
 	gamedrv = &machine.system();
-	devimg = image_interface_iterator(machine.root_device()).first();
+	devimg = image_interface_enumerator(machine.root_device()).first();
 	
 	if (gamedrv)
 		strcpy(vgm_namebase, gamedrv->type.shortname());
@@ -362,12 +363,15 @@ void vgm_start(running_machine &machine)
 		str2utf16(VgmTag.strSystemNameE, gamedrv->type.fullname(), 0x30);
 		if (devimg != nullptr && devimg->exists())
 		{
-			if (devimg->longname().length() > 0)
-				str2utf16(VgmTag.strGameNameE, devimg->longname().c_str(), 0x70);
-			else
-				str2utf16(VgmTag.strGameNameE, devimg->basename_noext(), 0x70);
-			str2utf16(VgmTag.strAuthorNameE, devimg->manufacturer().c_str(), 0x30);
-			str2utf16(VgmTag.strReleaseDate, devimg->year().c_str(), 0x10);
+			const software_info *swinfo = devimg->software_entry();
+			if (swinfo) {
+				if (swinfo->longname().length() > 0)
+					str2utf16(VgmTag.strGameNameE, swinfo->longname().c_str(), 0x70);
+				else
+					str2utf16(VgmTag.strGameNameE, devimg->basename_noext(), 0x70);
+				str2utf16(VgmTag.strAuthorNameE, swinfo->publisher().c_str(), 0x30);
+				str2utf16(VgmTag.strReleaseDate, swinfo->year().c_str(), 0x10);
+			}
 		}
 	}
 	
