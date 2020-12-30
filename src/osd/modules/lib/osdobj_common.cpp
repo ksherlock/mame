@@ -700,7 +700,7 @@ void osd_common_t::init_subsystems()
 	machine().add_notifier(MACHINE_NOTIFY_RESUME, machine_notify_delegate(&osd_common_t::input_resume, this));
 
 	/* ample - auto-select the first network interface */
-	for (device_network_interface &network : network_interface_iterator(machine().root_device()))
+	for (device_network_interface &network : network_interface_enumerator(machine().root_device()))
 	{
 		network.set_interface(0);
 		break;
