@@ -2,6 +2,7 @@
 #ifdef SDLMAME_MACOSX
 
 #include "emu.h"
+#include "natkeyboard.h"
 
 #include <Cocoa/Cocoa.h>
 
@@ -37,15 +38,25 @@
 	}
 	if (cmd == @selector(toggleThrottle:)) {
 		[menuItem setState: _machine->video().throttled() ? NSControlStateValueOn : NSControlStateValueOff];
-		return YES;		
+		return YES;
 	}
-
 	if (cmd == @selector(toggleKeyboard:)) {
 		[menuItem setState: _machine->ui_active() ? NSControlStateValueOn : NSControlStateValueOff];
+		return YES;
+	}
+	if (cmd == @selector(toggleFastForward:)) {
+		[menuItem setState: _machine->video().fastforward() ? NSControlStateValueOn : NSControlStateValueOff];
 		return YES;		
 	}
 
+	#if 0
+	if (cmd == @selector(paste:)) {
+		return osd_get_clipboard_text().empty() ? NO : YES;
+	}
+	#endif
+
 	return YES;
+
 }
 
 
@@ -58,6 +69,9 @@
 -(void)toggleThrottle:(id)sender {
 	_machine->video().set_throttled(!_machine->video().throttled());	
 }
+-(void)toggleFastForward:(id)sender {
+	_machine->video().set_fastforward(!_machine->video().fastforward());
+}
 -(void)toggleKeyboard:(id)sender {
 	_machine->set_ui_active(!_machine->ui_active());	
 }
@@ -67,6 +81,10 @@
 }
 -(void)hardReset:(id)sender {
 	_machine->schedule_hard_reset();
+}
+
+-(void)paste:(id)sender {
+	_machine->natkeyboard().paste();
 }
 
 @end
@@ -87,6 +105,13 @@ static NSMenuItem *BuildSpecialMenu(id target){
 	}
 	{
 		NSMenuItem *item = [[NSMenuItem alloc] initWithTitle: @"Throttle" action: @selector(toggleThrottle:) keyEquivalent: @"t"];
+		[item setKeyEquivalentModifierMask: NSEventModifierFlagOption|NSEventModifierFlagCommand];
+		[item setTarget: target];
+		[array addObject: item];
+		[item release];
+	}
+	{
+		NSMenuItem *item = [[NSMenuItem alloc] initWithTitle: @"Fast Forward" action: @selector(toggleFastForward:) keyEquivalent: @"f"];
 		[item setKeyEquivalentModifierMask: NSEventModifierFlagOption|NSEventModifierFlagCommand];
 		[item setTarget: target];
 		[array addObject: item];
@@ -114,6 +139,18 @@ static NSMenuItem *BuildSpecialMenu(id target){
 		[array addObject: item];
 		[item release];
 	}
+	{
+		NSMenuItem *item = [NSMenuItem separatorItem]; [array addObject: item];
+	}
+	{
+		NSMenuItem *item = [[NSMenuItem alloc] initWithTitle: @"Paste Text" action: @selector(paste:) keyEquivalent: @"v"];
+		[item setKeyEquivalentModifierMask: NSEventModifierFlagOption|NSEventModifierFlagCommand];
+		[item setTarget: target];
+		[array addObject: item];
+		[item release];
+	}
+
+
 	[menu setItemArray: array];
 	[menu setAutoenablesItems: YES];
 	[item setSubmenu: menu];
