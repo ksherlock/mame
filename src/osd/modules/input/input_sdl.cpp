@@ -384,6 +384,12 @@ public:
 		switch (sdlevent.type)
 		{
 		case SDL_KEYDOWN:
+
+			#ifdef AMPLE
+			/* ignore option-command-alpha menu items */
+			if (keyboard.state[SDL_SCANCODE_LALT] && keyboard.state[SDL_SCANCODE_LGUI] && sdlevent.key.keysym.scancode < SDL_SCANCODE_CAPSLOCK)
+				break;
+			#endif
 			keyboard.state[sdlevent.key.keysym.scancode] = 0x80;
 			if (sdlevent.key.keysym.sym < 0x20)
 				machine().ui_input().push_char_event(osd_common_t::s_window_list.front()->target(), sdlevent.key.keysym.sym);
