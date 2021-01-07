@@ -699,13 +699,14 @@ void osd_common_t::init_subsystems()
 	machine().add_notifier(MACHINE_NOTIFY_PAUSE, machine_notify_delegate(&osd_common_t::input_pause, this));
 	machine().add_notifier(MACHINE_NOTIFY_RESUME, machine_notify_delegate(&osd_common_t::input_resume, this));
 
+	#ifdef AMPLE
 	/* ample - auto-select the first network interface */
 	for (device_network_interface &network : network_interface_enumerator(machine().root_device()))
 	{
 		network.set_interface(0);
 		break;
 	}
-
+	#endif
 }
 
 bool osd_common_t::video_init()
