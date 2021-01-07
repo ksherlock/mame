@@ -436,12 +436,17 @@ project ("osd_" .. _OPTIONS["osd"])
 		MAME_DIR .. "src/osd/sdl/sdlopts.cpp",
 		MAME_DIR .. "src/osd/sdl/sdlopts.h",
 		MAME_DIR .. "src/osd/sdl/sdlprefix.h",
-		MAME_DIR .. "src/osd/sdl/macos_menus.mm",
 		MAME_DIR .. "src/osd/sdl/video.cpp",
 		MAME_DIR .. "src/osd/sdl/window.cpp",
 		MAME_DIR .. "src/osd/sdl/window.h",
 	}
 
+	-- ample
+	if _OPTIONS["targetos"]=="macosx" then
+		files {
+			MAME_DIR .. "src/osd/sdl/macos_menus.mm",
+		}
+	end
 
 project ("ocore_" .. _OPTIONS["osd"])
 	targetsubdir(_OPTIONS["target"] .."_" .. _OPTIONS["subtarget"])
