@@ -410,6 +410,12 @@ public:
 		{
 		case SDL_KEYDOWN:
 
+			#ifdef AMPLE
+			/* ignore option-command-alpha menu items */
+			if (keyboard.state[SDL_SCANCODE_LALT] && keyboard.state[SDL_SCANCODE_LGUI] && sdlevent.key.keysym.scancode < SDL_SCANCODE_CAPSLOCK)
+				break;
+			#endif
+
 			#ifdef __APPLE__
 			if (sdlevent.key.keysym.scancode == SDL_SCANCODE_CAPSLOCK)
 				m_capslock_hack = 2;
