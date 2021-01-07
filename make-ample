@@ -1,0 +1,43 @@
+
+
+DRIVERS = apple1.cpp apple2.cpp apple3.cpp apple2e.cpp apple2gs.cpp agat.cpp vgmplay.cpp
+SOURCES = $(subst $(space),$(comma),$(addprefix src/mame/drivers/,$(DRIVERS)))
+comma = ,
+empty = 
+space = $(empty) $(empty)
+
+.PHONY: all
+all: mame64 mame-data.tgz
+
+.PHONY: mame64
+mame64:
+	make -j2 SOURCES=${SOURCES} SDL_INI_PATH=. USE_VMNET_HELPER=1 USE_PCAP=0 SDL_FRAMEWORK_PATH="`pwd`/Frameworks" REGENIE=${REGENIE} ARCHOPTS=-DAMPLE
+
+.PHONY: macosx_x64_clang
+macosx_x64_clang:
+	make -j2 SOURCES=${SOURCES} SDL_INI_PATH=. USE_VMNET_HELPER=1 USE_PCAP=0 SDL_FRAMEWORK_PATH="`pwd`/Frameworks" REGENIE=${REGENIE} ARCHOPTS=-DAMPLE macosx_x64_clang
+
+
+.PHONY: macosx_arm64_clang
+macosx_arm64_clang:
+	make -j2 SOURCES=${SOURCES} SDL_INI_PATH=. USE_VMNET_HELPER=1 USE_PCAP=0 SDL_FRAMEWORK_PATH="`pwd`/Frameworks" REGENIE=${REGENIE} ARCHOPTS=-DAMPLE macosx_arm64_clang
+
+.PHONY: mame64d
+mame64d:
+	make -j2 SOURCES=${SOURCES} SDL_INI_PATH=. USE_VMNET_HELPER=1 USE_PCAP=0 SDL_FRAMEWORK_PATH="`pwd`/Frameworks" DEBUG=1 SYMBOLS=1 REGENIE=${REGENIE} ARCHOPTS=-DAMPLE
+	install_name_tool -add_rpath ./Frameworks/ mame64d
+
+#.PHONY: regenie
+#regenie:
+#	make -j2 SOURCES=${SOURCES} SDL_INI_PATH=. USE_VMNET_HELPER=1 USE_PCAP=0 SDL_FRAMEWORK_PATH="`pwd`/Frameworks" DEBUG=1 SYMBOLS=1 REGENIE=1
+
+# src/mame/drivers/apple1.cpp,src/mame/drivers/apple2.cpp,src/mame/drivers/apple2e.cpp,src/mame/drivers/apple2gs.cpp,src/mame/drivers/apple3.cpp 
+
+# excluding hashes directory for now.
+mame-data.tgz:
+	tar cfz mame-data.tgz --disable-copyfile artwork bgfx ini keymaps language plugins samples uismall.bdf
+
+.PHONY: clean
+clean:
+	rm mame64
+	rm mame-data.tgz
