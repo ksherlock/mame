@@ -53,7 +53,7 @@ public:
 
 	vmnet_helper_module() : osd_module(OSD_NETDEV_PROVIDER, "vmnet_helper"), netdev_module()
 	{
-		fprintf(stderr, "%s\n", __func__);
+		// fprintf(stderr, "%s\n", __func__);
 	}
 	virtual ~vmnet_helper_module() {}
 
@@ -61,7 +61,7 @@ public:
 	virtual void exit();
 
 	virtual bool probe() { 
-		fprintf(stderr, "%s\n", __func__);
+		// fprintf(stderr, "%s\n", __func__);
 		return true;
 	}
 };
@@ -155,7 +155,7 @@ static int set_close_exec(int fd) {
 netdev_vmnet_helper::netdev_vmnet_helper(const char *name, class device_network_interface *ifdev, int rate)
 	: osd_netdev(ifdev, rate) {
 
-	fprintf(stderr, "%s\n", __func__);
+	// fprintf(stderr, "%s\n", __func__);
 
 	int ok;
 
@@ -399,7 +399,7 @@ bool netdev_vmnet_helper::check_child() {
 
 
 netdev_vmnet_helper::~netdev_vmnet_helper() {
-	fprintf(stderr, "%s\n", __func__);
+	// fprintf(stderr, "%s\n", __func__);
 	shutdown_child();
 }
 
@@ -504,19 +504,19 @@ ssize_t netdev_vmnet_helper::writev(const struct iovec *iov, int iovcnt) {
 
 static CREATE_NETDEV(create_vmnet_helper)
 {
-	fprintf(stderr, "%s\n", __func__);
+	// fprintf(stderr, "%s\n", __func__);
 	auto *dev = new netdev_vmnet_helper(ifname, ifdev, rate);
 	return dynamic_cast<osd_netdev *>(dev);
 }
 
 int vmnet_helper_module::init(const osd_options &options) {
-	fprintf(stderr, "%s\n", __func__);
+	// fprintf(stderr, "%s\n", __func__);
 	add_netdev("vmnet_helper", "VM Network Device (H)", create_vmnet_helper);
 	return 0;
 }
 
 void vmnet_helper_module::exit() {
-	fprintf(stderr, "%s\n", __func__);
+	// fprintf(stderr, "%s\n", __func__);
 	clear_netdev();
 }
 
