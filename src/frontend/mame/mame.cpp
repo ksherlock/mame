@@ -107,6 +107,12 @@ void mame_machine_manager::update_machine()
 {
 	m_lua->set_machine(m_machine);
 	m_lua->attach_notifiers();
+
+#ifdef AMPLE
+	extern void ample_update_machine(running_machine *machine);
+	ample_update_machine(m_machine);
+#endif
+
 }
 
 
