@@ -8,7 +8,6 @@
 
 @interface MenuDelegate : NSObject<NSMenuItemValidation> {
 	running_machine *_machine;
-	NSMenu *_menu;
 
 	ioport_field *_speed;
 }
@@ -159,51 +158,52 @@
 
 	NSMenu *mainMenu = [NSApp mainMenu];
 
-	_menu = [[NSMenu alloc] initWithTitle: @"Special"];
+	NSMenu *menu = [[NSMenu alloc] initWithTitle: @"Special"];
 
 	{
-		NSMenuItem *item = [_menu addItemWithTitle: @"Pause" action: @selector(togglePause:) keyEquivalent: @"p"];
+		NSMenuItem *item = [menu addItemWithTitle: @"Pause" action: @selector(togglePause:) keyEquivalent: @"p"];
 		[item setKeyEquivalentModifierMask: NSEventModifierFlagOption|NSEventModifierFlagCommand];
 		[item setTarget: self];
 	}
 	{
-		NSMenuItem *item = [_menu addItemWithTitle: @"Throttle" action: @selector(toggleThrottle:) keyEquivalent: @"t"];
+		NSMenuItem *item = [menu addItemWithTitle: @"Throttle" action: @selector(toggleThrottle:) keyEquivalent: @"t"];
 		[item setKeyEquivalentModifierMask: NSEventModifierFlagOption|NSEventModifierFlagCommand];
 		[item setTarget: self];
 	}
 	{
-		NSMenuItem *item = [_menu addItemWithTitle: @"Fast Forward" action: @selector(toggleFastForward:) keyEquivalent: @"f"];
+		NSMenuItem *item = [menu addItemWithTitle: @"Fast Forward" action: @selector(toggleFastForward:) keyEquivalent: @"f"];
 		[item setKeyEquivalentModifierMask: NSEventModifierFlagOption|NSEventModifierFlagCommand];
 		[item setTarget: self];
 	}
 	{
-		NSMenuItem *item = [_menu addItemWithTitle: @"UI Keyboard" action: @selector(toggleKeyboard:) keyEquivalent: @"k"];
+		NSMenuItem *item = [menu addItemWithTitle: @"UI Keyboard" action: @selector(toggleKeyboard:) keyEquivalent: @"k"];
 		[item setKeyEquivalentModifierMask: NSEventModifierFlagOption|NSEventModifierFlagCommand];
 		[item setTarget: self];
 	}
 	{
-		NSMenuItem *item = [NSMenuItem separatorItem]; [_menu addItem: item];
+		NSMenuItem *item = [NSMenuItem separatorItem]; [menu addItem: item];
 	}
 	{
-		NSMenuItem *item = [_menu addItemWithTitle: @"Soft Reset" action: @selector(softReset:) keyEquivalent: @""];
+		NSMenuItem *item = [menu addItemWithTitle: @"Soft Reset" action: @selector(softReset:) keyEquivalent: @""];
 		[item setTarget: self];
 	}
 	{
-		NSMenuItem *item = [_menu addItemWithTitle: @"Hard Reset" action: @selector(hardReset:) keyEquivalent: @""];
+		NSMenuItem *item = [menu addItemWithTitle: @"Hard Reset" action: @selector(hardReset:) keyEquivalent: @""];
 		[item setTarget: self];
 	}
 	{
-		NSMenuItem *item = [NSMenuItem separatorItem]; [_menu addItem: item];
+		NSMenuItem *item = [NSMenuItem separatorItem]; [menu addItem: item];
 	}
 	{
-		NSMenuItem *item = [_menu addItemWithTitle: @"Paste Text" action: @selector(paste:) keyEquivalent: @"v"];
+		NSMenuItem *item = [menu addItemWithTitle: @"Paste Text" action: @selector(paste:) keyEquivalent: @"v"];
 		[item setKeyEquivalentModifierMask: NSEventModifierFlagOption|NSEventModifierFlagCommand];
 		[item setTarget: self];
 	}
 
-	[_menu setAutoenablesItems: YES];
+	[menu setAutoenablesItems: YES];
 	NSMenuItem *item  = [mainMenu addItemWithTitle: @"Special" action: NULL keyEquivalent: @""];
-	[item setSubmenu: _menu];
+	[item setSubmenu: menu];
+	[menu release];
 }
 
 -(void)fixMenus {
@@ -244,6 +244,15 @@ static MenuDelegate *target = nil;
 		[target buildSpecialMenu];
 		[target buildSpeedMenu];
 	}
+
+
+	/* ample - auto-select the first network interface */
+	for (device_network_interface &network : network_interface_enumerator(machine->root_device()))
+	{
+		network.set_interface(0);
+		break;
+	}
+
 }
 
 
