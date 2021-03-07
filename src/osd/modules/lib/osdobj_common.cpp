@@ -652,14 +652,14 @@ void osd_common_t::init_subsystems()
 
 	input_init();
 
-	#ifdef AMPLE
+#ifdef AMPLE
 	/* ample - auto-select the first network interface */
 	for (device_network_interface &network : network_interface_enumerator(machine().root_device()))
 	{
 		network.set_interface(0);
 		break;
 	}
-	#endif
+#endif
 }
 
 bool osd_common_t::video_init()
