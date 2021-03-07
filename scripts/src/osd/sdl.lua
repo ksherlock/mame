@@ -393,7 +393,7 @@ project ("osd_" .. _OPTIONS["osd"])
 	-- ample
 	if _OPTIONS["targetos"]=="macosx" then
 		files {
-			MAME_DIR .. "src/osd/sdl/macos_menus.mm",
+			MAME_DIR .. "src/osd/sdl/ample.mm",
 		}
 	end
 
