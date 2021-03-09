@@ -3,6 +3,10 @@
 
 #include "emu.h"
 #include "natkeyboard.h"
+#include "dipty.h"
+
+
+#include <cstdio>
 
 #include <Cocoa/Cocoa.h>
 
@@ -251,6 +255,14 @@ static MenuDelegate *target = nil;
 	{
 		network.set_interface(0);
 		break;
+	}
+
+	/* print any active ptys */
+	for (device_pty_interface &pty : pty_interface_enumerator(machine->root_device()))
+	{
+		const char *port_name = pty.device().owner()->tag() + 1;
+		if (pty.is_open())
+			std::printf("%s: %s\n", port_name, pty.slave_name());
 	}
 
 }
