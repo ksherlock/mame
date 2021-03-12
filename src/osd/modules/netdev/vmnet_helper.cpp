@@ -60,7 +60,7 @@ public:
 	virtual int init(const osd_options &options);
 	virtual void exit();
 
-	virtual bool probe() { 
+	virtual bool probe() {
 		// fprintf(stderr, "%s\n", __func__);
 		return true;
 	}
