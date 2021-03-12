@@ -654,6 +654,10 @@ void sdl_osd_interface::process_events()
 				}
 			}
 			break;
+#ifdef AMPLE
+		case SDL_QUIT:
+			machine().schedule_exit();
+#endif
 		}
 
 		// let input modules do their thing
