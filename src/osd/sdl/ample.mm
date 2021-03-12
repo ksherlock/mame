@@ -29,7 +29,7 @@
 
 @end
 
-@implementation MenuDelegate 
+@implementation MenuDelegate
 
 -(instancetype)initWithMachine: (running_machine *)machine {
 	_machine = machine;
@@ -53,7 +53,7 @@
 	}
 	if (cmd == @selector(toggleFastForward:)) {
 		[menuItem setState: _machine->video().fastforward() ? NSControlStateValueOn : NSControlStateValueOff];
-		return YES;		
+		return YES;
 	}
 
 	if (cmd == @selector(setSpeed:)) {
@@ -87,13 +87,13 @@
 	_machine->toggle_pause();
 }
 -(void)toggleThrottle:(id)sender {
-	_machine->video().set_throttled(!_machine->video().throttled());	
+	_machine->video().set_throttled(!_machine->video().throttled());
 }
 -(void)toggleFastForward:(id)sender {
 	_machine->video().set_fastforward(!_machine->video().fastforward());
 }
 -(void)toggleKeyboard:(id)sender {
-	_machine->set_ui_active(!_machine->ui_active());	
+	_machine->set_ui_active(!_machine->ui_active());
 }
 
 -(void)softReset:(id)sender {
