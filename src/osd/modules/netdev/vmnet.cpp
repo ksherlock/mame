@@ -47,7 +47,7 @@ public:
 	virtual int init(const osd_options &options);
 	virtual void exit();
 
-	virtual bool probe() { 
+	virtual bool probe() {
 		return true;
 	}
 };
