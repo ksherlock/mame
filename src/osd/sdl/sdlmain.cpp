@@ -517,6 +517,7 @@ void sdl_osd_interface::init(running_machine &machine)
 	}
 
 
+
 #ifdef SDLMAME_EMSCRIPTEN
 	SDL_EventState(SDL_TEXTINPUT, SDL_FALSE);
 #else
