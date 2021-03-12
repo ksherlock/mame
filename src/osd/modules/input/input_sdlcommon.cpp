@@ -67,8 +67,10 @@ void sdl_event_manager::process_events(running_machine &machine)
 		if (sdlevent.type == SDL_WINDOWEVENT)
 			process_window_event(machine, sdlevent);
 
+#ifdef AMPLE
 		if (sdlevent.type == SDL_QUIT)
 			machine.schedule_exit();
+#endif
 
 		// Find all subscribers for the event type
 		auto subscribers = m_subscription_index.equal_range(sdlevent.type);
