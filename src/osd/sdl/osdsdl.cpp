@@ -593,6 +593,10 @@ void sdl_osd_interface::process_events()
 					machine().ui_input().push_mouse_wheel_event(window->target(), 0, 0, event.wheel.y, 3);
 			}
 			break;
+#ifdef AMPLE
+		case SDL_QUIT:
+			machine().schedule_exit();
+#endif
 		}
 
 		// let input modules do their thing
