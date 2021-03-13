@@ -4,6 +4,7 @@
 #include "emu.h"
 #include "natkeyboard.h"
 #include "dipty.h"
+#include "emuopts.h"
 
 
 #include <cstdio>
@@ -20,6 +21,7 @@
 
 -(void)preferences:(id)sender;
 -(void)togglePause:(id)sender;
+-(void)toggleMouse:(id)sender;
 -(void)toggleThrottle:(id)sender;
 -(void)toggleKeyboard:(id)sender;
 
@@ -67,6 +69,13 @@
 			[menuItem setEnabled: YES];
 			[menuItem setState: tag == _speed->live().value ? NSControlStateValueOn : NSControlStateValueOff];
 		}
+		return YES;
+	}
+
+	if (cmd == @selector(toggleMouse:)) {
+		bool on = _machine->options().mouse();
+		[menuItem setState: on ? NSControlStateValueOn : NSControlStateValueOff];
+		return YES;
 	}
 
 	#if 0
@@ -112,6 +121,12 @@
 	if (!_speed) return;
 	unsigned tag = [(NSMenuItem *)sender tag];
 	_speed->live().value = tag;
+}
+
+-(void)toggleMouse:(id)sender {
+
+	bool on = _machine->options().mouse();
+	_machine->options().set_value(OPTION_MOUSE, !on, OPTION_PRIORITY_MAXIMUM);
 }
 
 -(void)buildSpeedMenu {
@@ -166,6 +181,11 @@
 
 	{
 		NSMenuItem *item = [menu addItemWithTitle: @"Pause" action: @selector(togglePause:) keyEquivalent: @"p"];
+		[item setKeyEquivalentModifierMask: NSEventModifierFlagOption|NSEventModifierFlagCommand];
+		[item setTarget: self];
+	}
+	{
+		NSMenuItem *item = [menu addItemWithTitle: @"Capture Mouse" action: @selector(toggleMouse:) keyEquivalent: @" "];
 		[item setKeyEquivalentModifierMask: NSEventModifierFlagOption|NSEventModifierFlagCommand];
 		[item setTarget: self];
 	}
