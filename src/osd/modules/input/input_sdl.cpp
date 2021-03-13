@@ -593,7 +593,7 @@ public:
 
 #ifdef AMPLE
 			/* ignore option-command-alpha menu items */
-			if (m_keyboard.state[SDL_SCANCODE_LALT] && m_keyboard.state[SDL_SCANCODE_LGUI] && event.key.keysym.scancode < SDL_SCANCODE_CAPSLOCK)
+			if (m_keyboard.state[SDL_SCANCODE_LALT] && m_keyboard.state[SDL_SCANCODE_LGUI] && event.key.keysym.scancode < SDL_SCANCODE_ESCAPE)
 				break;
 #endif
 
