@@ -596,7 +596,9 @@ public:
 			#ifdef AMPLE
 			/* ignore option-command-alpha menu items */
 			/* GSBug uses control-option-command-esc  */
-			if (keyboard.state[SDL_SCANCODE_LALT] && keyboard.state[SDL_SCANCODE_LGUI] && sdlevent.key.keysym.scancode < SDL_SCANCODE_ESCAPE)
+			if (keyboard.state[SDL_SCANCODE_LALT] && keyboard.state[SDL_SCANCODE_LGUI]
+				&& sdlevent.key.keysym.scancode < SDL_SCANCODE_CAPSLOCK
+				&& sdlevent.key.keysym.scancode != SDL_SCANCODE_ESCAPE)
 				break;
 			#endif
 
