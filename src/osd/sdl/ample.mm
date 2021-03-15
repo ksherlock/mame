@@ -143,6 +143,21 @@
 
 	NSMenu *mainMenu = [NSApp mainMenu];
 
+	NSMenu *menu = [[NSMenu alloc] initWithTitle: @"Speed"];
+
+	{
+		NSMenuItem *item = [menu addItemWithTitle: @"Throttle" action: @selector(toggleThrottle:) keyEquivalent: @"t"];
+		[item setKeyEquivalentModifierMask: NSEventModifierFlagOption|NSEventModifierFlagCommand];
+		[item setTarget: self];
+	}
+	{
+		NSMenuItem *item = [menu addItemWithTitle: @"Fast Forward" action: @selector(toggleFastForward:) keyEquivalent: @"f"];
+		[item setKeyEquivalentModifierMask: NSEventModifierFlagOption|NSEventModifierFlagCommand];
+		[item setTarget: self];
+	}
+
+
+	// is speed clobbered by a reset?
 	for (auto &port : _machine->ioport().ports()) {
 		if (port.first != ":a2_config") continue;
 		for (ioport_field &field : port.second->fields()) {
@@ -151,7 +166,9 @@
 			if (strcmp("CPU type", name))  continue;
 			_speed = &field;
 
-			NSMenu *menu = [[NSMenu alloc] initWithTitle: @"Speed"];
+			{
+				NSMenuItem *item = [NSMenuItem separatorItem]; [menu addItem: item];
+			}
 
 			for (auto &setting : field.settings()) {
 
@@ -162,14 +179,16 @@
 			}
 
 
-			NSMenuItem *item = [mainMenu addItemWithTitle: @"Speed" action: NULL keyEquivalent: @""];
-			[item setSubmenu: menu];
-			[menu setAutoenablesItems: YES];
-
-			[menu release];
 		}
 
 	}
+
+	NSMenuItem *item = [mainMenu addItemWithTitle: @"Speed" action: NULL keyEquivalent: @""];
+	[item setSubmenu: menu];
+	[menu setAutoenablesItems: YES];
+
+	[menu release];
+
 }
 
 -(void)buildSpecialMenu {
@@ -189,16 +208,7 @@
 		[item setKeyEquivalentModifierMask: NSEventModifierFlagOption|NSEventModifierFlagCommand];
 		[item setTarget: self];
 	}
-	{
-		NSMenuItem *item = [menu addItemWithTitle: @"Throttle" action: @selector(toggleThrottle:) keyEquivalent: @"t"];
-		[item setKeyEquivalentModifierMask: NSEventModifierFlagOption|NSEventModifierFlagCommand];
-		[item setTarget: self];
-	}
-	{
-		NSMenuItem *item = [menu addItemWithTitle: @"Fast Forward" action: @selector(toggleFastForward:) keyEquivalent: @"f"];
-		[item setKeyEquivalentModifierMask: NSEventModifierFlagOption|NSEventModifierFlagCommand];
-		[item setTarget: self];
-	}
+
 	{
 		NSMenuItem *item = [menu addItemWithTitle: @"UI Keyboard" action: @selector(toggleKeyboard:) keyEquivalent: @"k"];
 		[item setKeyEquivalentModifierMask: NSEventModifierFlagOption|NSEventModifierFlagCommand];
