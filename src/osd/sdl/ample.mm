@@ -12,8 +12,10 @@
 #include <Cocoa/Cocoa.h>
 
 @interface MenuDelegate : NSObject<NSMenuItemValidation> {
-	running_machine *_machine;
+	NSMenuItem *_specialMenuItem;
+	NSMenuItem *_speedMenuItem;
 
+	running_machine *_machine;
 	ioport_field *_speed;
 }
 
@@ -131,15 +133,6 @@
 
 -(void)buildSpeedMenu {
 
-#if 0
-	auto &list = _machine.ioport().ports();
-	auto iter = list.find(":a2_config");
-	if (iter != list.end()) {
-
-
-
-	}
-#endif
 
 	NSMenu *mainMenu = [NSApp mainMenu];
 
@@ -184,9 +177,9 @@
 	}
 
 	NSMenuItem *item = [mainMenu addItemWithTitle: @"Speed" action: NULL keyEquivalent: @""];
+	_speedMenuItem = [item retain];
 	[item setSubmenu: menu];
 	[menu setAutoenablesItems: YES];
-
 	[menu release];
 
 }
@@ -234,10 +227,23 @@
 		[item setTarget: self];
 	}
 
-	[menu setAutoenablesItems: YES];
 	NSMenuItem *item  = [mainMenu addItemWithTitle: @"Special" action: NULL keyEquivalent: @""];
+	_specialMenuItem = [item retain];
 	[item setSubmenu: menu];
+	[menu setAutoenablesItems: YES];
 	[menu release];
+}
+
+-(void)dealloc {
+
+	NSMenu *mainMenu = [NSApp mainMenu];
+	if (_speedMenuItem) [mainMenu removeItem: _speedMenuItem];
+	if (_specialMenuItem) [mainMenu removeItem: _specialMenuItem];
+
+	[_speedMenuItem release];
+	[_specialMenuItem release];
+
+	[super dealloc];
 }
 
 -(void)fixMenus {
@@ -265,11 +271,13 @@
 @end
 
 
+/* called after a hard reset, etc, in which case the existing delegate and menus should be destroyed */
 
 void ample_update_machine(running_machine *machine) {
 
 static MenuDelegate *target = nil;
 
+	if (target) [target release];
 	target = [[MenuDelegate alloc] initWithMachine: machine];
 
 	@autoreleasepool {
