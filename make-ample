@@ -1,6 +1,6 @@
 
 
-DRIVERS = apple1.cpp apple2.cpp apple3.cpp apple2e.cpp apple2gs.cpp agat.cpp vgmplay.cpp mac.cpp
+DRIVERS = apple1.cpp apple2.cpp apple3.cpp apple2e.cpp apple2gs.cpp agat.cpp vgmplay.cpp mac.cpp mac128.cpp
 SOURCES = $(subst $(space),$(comma),$(addprefix src/mame/drivers/,$(DRIVERS)))
 comma = ,
 empty = 
