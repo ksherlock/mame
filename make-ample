@@ -9,18 +9,23 @@ space = $(empty) $(empty)
 .PHONY: all
 all: mame64 mame-data.tgz
 
-.PHONY: mame64
-mame64:
-	make -j2 SOURCES=${SOURCES} SDL_INI_PATH=. USE_VMNET_HELPER=1 USE_PCAP=0 SDL_FRAMEWORK_PATH="`pwd`/Frameworks" REGENIE=${REGENIE} ARCHOPTS=-DAMPLE
 
-.PHONY: macosx_x64_clang
-macosx_x64_clang:
-	make -j2 SOURCES=${SOURCES} SDL_INI_PATH=. USE_VMNET_HELPER=1 USE_PCAP=0 SDL_FRAMEWORK_PATH="`pwd`/Frameworks" REGENIE=${REGENIE} ARCHOPTS=-DAMPLE macosx_x64_clang
+mame-universal: mame-arm64 mame-x64
+	lipo -create -output mame-universal mame-arm64 mame-x64
+
+mame-arm64:
+	make -j3 REGENIE=${REGENIE} SOURCES=${SOURCES} SDL_INI_PATH=. USE_VMNET_HELPER=1 USE_PCAP=0 \
+	SDL_FRAMEWORK_PATH="`pwd`/Frameworks" REGENIE=${REGENIE} ARCHOPTS="-DAMPLE -target arm64-apple-macos11" \
+	BUILDDIR=build-arm64 UNAME="Darwin arm64 arm" UNAME_M=arm64 UNAME_P=arm
+	mv mame mame-arm64
+
+mame-x64:
+	make -j3 REGENIE=${REGENIE} SOURCES=${SOURCES} SDL_INI_PATH=. USE_VMNET_HELPER=1 USE_PCAP=0 \
+	SDL_FRAMEWORK_PATH="`pwd`/Frameworks" REGENIE=${REGENIE} ARCHOPTS="-DAMPLE -target x86_64-apple-macos10.11" \
+	BUILDDIR=build-x64 UNAME="Darwin x86_64 i386" UNAME_M=x86_64 UNAME_P=i386
+	mv mame mame-x64
 
 
-.PHONY: macosx_arm64_clang
-macosx_arm64_clang:
-	make -j2 SOURCES=${SOURCES} SDL_INI_PATH=. USE_VMNET_HELPER=1 USE_PCAP=0 SDL_FRAMEWORK_PATH="`pwd`/Frameworks" REGENIE=${REGENIE} ARCHOPTS=-DAMPLE macosx_arm64_clang
 
 .PHONY: mame64d
 mame64d:
