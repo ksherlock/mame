@@ -155,6 +155,55 @@ static unsigned ip_checksum(const uint8_t *packet) {
 }
 #endif
 
+static void recalc_udp_checksum(uint8_t *packet, unsigned size) {
+  if (size < eth_data + ip_data + udp_data) return;
+
+  // checksum optional for UDP.
+  if (packet[eth_data+ip_data+udp_cksum+0] == 0 && packet[eth_data+ip_data+udp_cksum+1] == 0)
+    return;
+
+
+  // unsigned ip_version = packet[eth_data + ip_ver_ihl] & 0xf0;
+  unsigned packet_len = (packet[eth_data + ip_len + 0] << 8) | (packet[eth_data + ip_len + 1]);
+  // unsigned proto = packet[eth_data+ip_proto];
+
+  packet[eth_data+ip_data+udp_cksum+0] = 0;
+  packet[eth_data+ip_data+udp_cksum+1] = 0;
+
+  if (packet_len + eth_data < size)
+    return;
+
+  packet_len -= ip_data;
+
+  unsigned sum = 0;
+  unsigned i;
+
+  // pseudo header = src address, dest address, protocol (17), udp + data length
+  sum = 17 + packet_len;
+  for (i = 0; i < 4; i += 2) {
+    sum += (uint32_t)packet[eth_data+ip_src + i + 0] << 8;
+    sum += (uint32_t)packet[eth_data+ip_src + i + 1];
+    sum += (uint32_t)packet[eth_data+ip_dest + i + 0] << 8;
+    sum += (uint32_t)packet[eth_data+ip_dest + i + 1];
+  }
+
+  for(i = 0; i < packet_len; i += 2) {
+    sum += (uint32_t)packet[eth_data+ip_data+i + 0] << 8;
+    sum += (uint32_t)packet[eth_data+ip_data+i + 1];
+  }
+  if (packet_len & 0x01) {
+    sum += (uint32_t)packet[eth_data+packet_len-1] << 8;
+  }
+
+  sum += sum >> 16;
+  sum = ~sum & 0xffff;
+
+  packet[eth_data+ip_data+udp_cksum+0] = (sum >> 8) & 0xff;
+  packet[eth_data+ip_data+udp_cksum+1] = (sum >> 0) & 0xff;
+
+}
+
+
 static void fix_incoming_packet(uint8_t *packet, unsigned size, const char real_mac[6], const char fake_mac[6]) {
 
   if (memcmp(packet + 0, real_mac, 6) == 0)
@@ -186,8 +235,10 @@ static void fix_outgoing_packet(uint8_t *packet, unsigned size, const char real_
   /* dhcp request - fix the hardware address */
   if (is_broadcast(packet, size) && is_dhcp_out(packet, size)) {
 
-    if (!memcmp(packet + 70, fake_mac, 6))
+    if (!memcmp(packet + 70, fake_mac, 6)) {
       memcpy(packet + 70, real_mac, 6);
+      recalc_udp_checksum(packet, size);
+    }
     return;
   }
 
