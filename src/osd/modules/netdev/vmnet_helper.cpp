@@ -305,7 +305,7 @@ int netdev_vmnet_helper::message_write(void *buffer, uint32_t length) {
 	ok = read(&msg, 4);
 	if (ok != 4) return -1;
 	//if (msg != MAKE_MSG(MSG_WRITE, length)) return -1;
-	return msg;
+	return length;
 }
 
 int netdev_vmnet_helper::message_read() {
