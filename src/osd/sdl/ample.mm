@@ -14,6 +14,7 @@
 @interface MenuDelegate : NSObject<NSMenuItemValidation> {
 	NSMenuItem *_specialMenuItem;
 	NSMenuItem *_speedMenuItem;
+	NSMenuItem *_videoMenu;
 
 	running_machine *_machine;
 	ioport_field *_speed;
@@ -63,21 +64,29 @@
 	if (cmd == @selector(setSpeed:)) {
 
 		if (!_speed) {
-			[menuItem setEnabled: NO];
+			return NO;
 		} else {
 
 			unsigned tag = [menuItem tag];
 
-			[menuItem setEnabled: YES];
 			[menuItem setState: tag == _speed->live().value ? NSControlStateValueOn : NSControlStateValueOff];
+			return YES;
 		}
-		return YES;
 	}
 
 	if (cmd == @selector(toggleMouse:)) {
 		bool on = _machine->options().mouse();
 		[menuItem setState: on ? NSControlStateValueOn : NSControlStateValueOff];
 		return YES;
+	}
+
+
+	if (cmd == @selector(recordAVI:) || cmd == @selector(recordMNG:) || cmd == @selector(recordStop:)) {
+		bool on = _machine->video().is_recording();
+		if (cmd == @selector(recordStop:))
+			return on;
+		else
+			return !on;
 	}
 
 	#if 0
@@ -129,6 +138,22 @@
 
 	bool on = _machine->options().mouse();
 	_machine->options().set_value(OPTION_MOUSE, !on, OPTION_PRIORITY_MAXIMUM);
+}
+
+-(void)recordMNG:(id)sender {
+	_machine->video().toggle_record_movie(movie_recording::format::MNG);
+}
+
+-(void)recordAVI:(id)sender {
+	_machine->video().toggle_record_movie(movie_recording::format::AVI);
+}
+
+-(void)recordStop:(id)sender {
+	_machine->video().end_recording();
+}
+
+-(void)snapshot:(id)sender {
+	_machine->video().save_active_screen_snapshots();
 }
 
 -(void)buildSpeedMenu {
@@ -234,14 +259,56 @@
 	[menu release];
 }
 
+
+-(void)buildVideoMenu {
+
+
+	NSMenu *mainMenu = [NSApp mainMenu];
+
+	NSMenu *menu = [[NSMenu alloc] initWithTitle: @"Video"];
+
+	{
+		NSMenuItem *item = [menu addItemWithTitle: @"Save Snapshot" action: @selector(snapshot:) keyEquivalent: @""];
+		[item setKeyEquivalentModifierMask: NSEventModifierFlagOption|NSEventModifierFlagCommand];
+		[item setTarget: self];
+	}
+
+	{
+		NSMenuItem *item = [menu addItemWithTitle: @"Record MNG" action: @selector(recordMNG:) keyEquivalent: @""];
+		[item setKeyEquivalentModifierMask: NSEventModifierFlagOption|NSEventModifierFlagCommand];
+		[item setTarget: self];
+	}
+	{
+		NSMenuItem *item = [menu addItemWithTitle: @"Record AVI" action: @selector(recordAVI:) keyEquivalent: @""];
+		[item setKeyEquivalentModifierMask: NSEventModifierFlagOption|NSEventModifierFlagCommand];
+		[item setTarget: self];
+	}
+
+	{
+		NSMenuItem *item = [menu addItemWithTitle: @"Stop" action: @selector(recordStop:) keyEquivalent: @""];
+		[item setKeyEquivalentModifierMask: NSEventModifierFlagOption|NSEventModifierFlagCommand];
+		[item setTarget: self];
+	}
+
+
+	NSMenuItem *item  = [mainMenu addItemWithTitle: @"Video" action: NULL keyEquivalent: @""];
+	_videoMenu = [item retain];
+	[item setSubmenu: menu];
+	[menu setAutoenablesItems: YES];
+	[menu release];
+}
+
+
 -(void)dealloc {
 
 	NSMenu *mainMenu = [NSApp mainMenu];
 	if (_speedMenuItem) [mainMenu removeItem: _speedMenuItem];
 	if (_specialMenuItem) [mainMenu removeItem: _specialMenuItem];
+	if (_videoMenu) [mainMenu removeItem: _videoMenu];
 
 	[_speedMenuItem release];
 	[_specialMenuItem release];
+	[_videoMenu release];
 
 	[super dealloc];
 }
@@ -285,6 +352,7 @@ static MenuDelegate *target = nil;
 		[target fixMenus];
 		[target buildSpecialMenu];
 		[target buildSpeedMenu];
+		[target buildVideoMenu];
 	}
 
 
