@@ -76,7 +76,7 @@ enum {
 static uint8_t ff[] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
 
 static int is_arp(const uint8_t *packet, unsigned size) {
-  return size == arp_data
+  return size >= arp_data
     && packet[12] == 0x08 && packet[13] == 0x06 /* ARP */
     && packet[14] == 0x00 && packet[15] == 0x01 /* ethernet */
     && packet[16] == 0x08 && packet[17] == 0x00 /* ipv4 */
@@ -209,6 +209,13 @@ static void fix_incoming_packet(uint8_t *packet, unsigned size, const char real_
   if (memcmp(packet + 0, real_mac, 6) == 0)
     memcpy(packet + 0, fake_mac, 6);
 
+  if (is_arp(packet, size)) {
+    /* receiver mac address */
+    if (!memcmp(packet + 32, real_mac, 6))
+      memcpy(packet + 32, fake_mac, 6);
+    return;
+  }
+
   /* dhcp request - fix the hardware address */
   if (is_unicast(packet, size) && is_dhcp_in(packet, size)) {
     if (!memcmp(packet + 70, real_mac, 6))
@@ -243,3 +250,36 @@ static void fix_outgoing_packet(uint8_t *packet, unsigned size, const char real_
   }
 
 }
+
+static constexpr int ETHERNET_MIN_FRAME = 64;
+
+static u32 finalize_frame(u8 buf[], u32 length)
+{
+  /*
+   * The taptun driver receives frames which are shorter than the Ethernet
+   * minimum. Partly this is because it can't see the frame check sequence
+   * bytes, but mainly it's because the OS expects the lower level device
+   * to add the required padding.
+   *
+   * We do the equivalent padding here (i.e. pad with zeroes to the
+   * minimum Ethernet length minus FCS), so that devices which check
+   * for this will not reject these packets.
+   */
+  if (length < ETHERNET_MIN_FRAME - 4)
+  {
+    std::fill_n(&buf[length], ETHERNET_MIN_FRAME - length - 4, 0);
+
+    length = ETHERNET_MIN_FRAME - 4;
+  }
+
+  // compute and append the frame check sequence
+  const u32 fcs = util::crc32_creator::simple(buf, length);
+
+  buf[length++] = (fcs >> 0) & 0xff;
+  buf[length++] = (fcs >> 8) & 0xff;
+  buf[length++] = (fcs >> 16) & 0xff;
+  buf[length++] = (fcs >> 24) & 0xff;
+
+  return length;
+}
+
