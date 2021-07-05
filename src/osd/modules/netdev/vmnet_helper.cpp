@@ -282,7 +282,8 @@ int netdev_vmnet_helper::message_status() {
 	if (m_vmnet_packet_size < 256) {
 		m_vmnet_packet_size = 1518;
 	}
-	m_buffer = (uint8_t *)malloc(m_vmnet_packet_size);
+	/* add 4 extra bytes to append a crc */
+	m_buffer = (uint8_t *)malloc(m_vmnet_packet_size + 4);
 	if (!m_buffer) return -1;
 	return 0;
 }
@@ -457,13 +458,15 @@ int netdev_vmnet_helper::recv_dev(uint8_t **buf) {
 		check_child();
 		return 0;
 	}
+	if (ok == 0) return 0;
+
 	if (memcmp(m_mac, m_vmnet_mac, 6) != 0) {
 		fix_incoming_packet(m_buffer, ok, m_vmnet_mac, m_mac);
 	}
 
 	*buf = m_buffer;
-	return ok;
 
+	return finalize_frame(m_buffer, ok);
 }
 
 
