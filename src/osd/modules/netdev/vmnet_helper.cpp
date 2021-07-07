@@ -26,6 +26,7 @@
 #include <cerrno>
 #include <csignal>
 #include <cstring>
+#include <cctype>
 
 #include <algorithm>
 #include <string>
@@ -91,6 +92,8 @@ private:
 	ssize_t readv(const struct iovec *iov, int iovcnt);
 	ssize_t writev(const struct iovec *iov, int iovcnt);
 
+
+	void dump(uint8_t *buf, int len);
 
 	char m_vmnet_mac[6];
 	uint32_t m_vmnet_mtu;
@@ -504,6 +507,38 @@ ssize_t netdev_vmnet_helper::writev(const struct iovec *iov, int iovcnt) {
 		return rv;
 	}
 }
+
+void netdev_vmnet_helper::dump(uint8_t *buf, int len) {
+
+  static const char hex[] = "0123456789abcdef";
+  char buffer1[16 * 3 + 1];
+  char buffer2[16 + 1];
+  unsigned offset;
+  uint8_t *cp = buf;
+
+
+  offset = 0;
+  while (len > 0) {
+    unsigned char x = *cp++;
+
+    buffer1[offset * 3] = hex[x >> 4];
+    buffer1[offset * 3 + 1] = hex[x & 0x0f];
+    buffer1[offset * 3 + 2] = ' ';
+
+    buffer2[offset] = (x < 0x80) && std::isprint(x) ? x : '.';
+
+    --len;
+    ++offset;
+    if (offset == 16 || len == 0) {
+      buffer1[offset * 3] = 0;
+      buffer2[offset] = 0;
+      fprintf(stderr, "%-50s %s\n", buffer1, buffer2);
+      offset = 0;
+    }
+  }
+
+}
+
 
 static CREATE_NETDEV(create_vmnet_helper)
 {
