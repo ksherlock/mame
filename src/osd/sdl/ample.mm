@@ -11,6 +11,13 @@
 
 #include <Cocoa/Cocoa.h>
 
+
+@interface FFButton : NSButton
+@property BOOL active;
+@end
+
+
+
 @interface MenuDelegate : NSObject<NSMenuItemValidation> {
 	NSMenuItem *_specialMenuItem;
 	NSMenuItem *_speedMenuItem;
@@ -114,6 +121,14 @@
 }
 -(void)toggleKeyboard:(id)sender {
 	_machine->set_ui_active(!_machine->ui_active());
+}
+
+-(void)tbFastForward:(id)sender {
+#if 0
+	NSLog(@"%@ - state: %u highlight: %u tag: %u",
+		sender, (int)[sender state], (int)[sender isHighlighted], (int)[sender tag]);
+#endif
+	_machine->video().set_fastforward([(FFButton *)sender active]);
 }
 
 -(void)softReset:(id)sender {
@@ -310,6 +325,8 @@
 	[_specialMenuItem release];
 	[_videoMenu release];
 
+	[NSApp setTouchBar: nil];
+
 	[super dealloc];
 }
 
@@ -335,6 +352,108 @@
 
 }
 
+-(void)buildTouchBar {
+
+	NSTouchBar *tb = [NSTouchBar new];
+	[tb setDefaultItemIdentifiers: @[@"mame.pause", @"mame.ff"]];
+
+	NSMutableSet *templates = [NSMutableSet set];
+	NSCustomTouchBarItem *item;
+	NSButton *button;
+
+	item = [[NSCustomTouchBarItem alloc] initWithIdentifier: @"mame.pause"];
+	button = [NSButton buttonWithTitle: @"Pause" target: self action: @selector(togglePause:)];
+	[item setView: button];
+
+	[templates addObject: item];
+	[item release];
+
+
+	item = [[NSCustomTouchBarItem alloc] initWithIdentifier: @"mame.ff"];
+	button = [FFButton buttonWithTitle: @"Fast Forward" target: self action: @selector(tbFastForward:)];
+	[button sendActionOn: NSLeftMouseDownMask|NSLeftMouseUpMask];
+	// [button setButtonType: NSButtonTypeMomentaryLight];
+	[item setView: button];
+
+	[templates addObject: item];
+	[item release];
+
+
+	[tb setTemplateItems: templates];
+	[NSApp setTouchBar: tb];
+	[tb release];
+}
+
+@end
+
+/* NSCell stuff is "deprecated" */
+#if 0
+@interface FFButtonCell : NSButtonCell
+@end
+
+
+/* fast forward while button is pressed - need extra logic to keep track of mouse down state */
+@implementation FFButtonCell
+
+// ??
++ (BOOL)prefersTrackingUntilMouseUp {
+  return YES;
+}
+
+
+- (BOOL)startTrackingAt:(NSPoint)startPoint inView:(NSView *)controlView {
+	// [controlView setTag: 1];
+	// [self setState: ]
+	//return [super startTrackingAt: startPoint inView: controlView];
+	[self setState: 1];
+	return YES;
+}
+
+- (BOOL)continueTracking:(NSPoint)lastPoint at:(NSPoint)currentPoint inView:(NSView *)controlView {
+	return YES;
+}
+
+
+- (void)stopTracking:(NSPoint)lastPoint at:(NSPoint)stopPoint inView:(NSView *)controlView mouseIsUp:(BOOL)flag {
+
+	[self setState: 0];
+
+	// [controlView setTag: 0];
+	// [super stopTracking: lastPoint at: stopPoint inView: controlView mouseIsUp: flag];
+}
+
+@end
+
+#endif
+
+@implementation FFButton
+
+#if 0
+-(void)mouseDown:(NSEvent *)event {
+	NSLog(@"mouseDown: %@", event);
+	[self setState: 1];
+	[super mouseDown: event];
+	[self setState: 0];
+}
+#endif
+
+- (void)touchesBeganWithEvent:(NSEvent *)event {
+	//NSLog(@"touchesBeganWithEvent: %@", event);
+	[self setActive: YES];
+	// [self setTag: 1];
+	// [self setState: 0];
+	[super touchesBeganWithEvent: event];
+}
+
+- (void)touchesEndedWithEvent:(NSEvent *)event {
+	//NSLog(@"touchesEndedWithEvent: %@", event);
+	[self setActive: NO];
+	// [self setTag: 0];
+	// [self setState: 1];
+	[super touchesEndedWithEvent: event];
+}
+
+
 @end
 
 
@@ -353,6 +472,7 @@ static MenuDelegate *target = nil;
 		[target buildSpecialMenu];
 		[target buildSpeedMenu];
 		[target buildVideoMenu];
+		[target buildTouchBar];
 	}
 
 
