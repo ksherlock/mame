@@ -6,6 +6,8 @@
 #include "dipty.h"
 #include "emuopts.h"
 
+#include "modules/lib/osdobj_common.h"
+#include "sdl/window.h"
 
 #include <cstdio>
 
@@ -121,6 +123,16 @@
 }
 -(void)toggleKeyboard:(id)sender {
 	_machine->set_ui_active(!_machine->ui_active());
+}
+
+-(void)toggleFullScreen:(id)sender {
+	for (auto win : osd_common_t::s_window_list)
+		std::static_pointer_cast<sdl_window_info>(win)->toggle_full_screen();
+}
+
+
+-(void)toggleMute:(id)sender {
+	_machine->sound().ui_mute(!_machine->sound().ui_mute());
 }
 
 -(void)tbFastForward:(id)sender {
@@ -355,7 +367,7 @@
 -(void)buildTouchBar {
 
 	NSTouchBar *tb = [NSTouchBar new];
-	[tb setDefaultItemIdentifiers: @[@"mame.pause", @"mame.ff"]];
+	[tb setDefaultItemIdentifiers: @[@"mame.pause", @"mame.ff", @"mame.mouse", @"mame.fullscreen", @"mame.mute"]];
 
 	NSMutableSet *templates = [NSMutableSet set];
 	NSCustomTouchBarItem *item;
@@ -369,6 +381,7 @@
 	[item release];
 
 
+	// NSTouchBarFastForwardTemplate
 	item = [[NSCustomTouchBarItem alloc] initWithIdentifier: @"mame.ff"];
 	button = [FFButton buttonWithTitle: @"Fast Forward" target: self action: @selector(tbFastForward:)];
 	[button sendActionOn: NSLeftMouseDownMask|NSLeftMouseUpMask];
@@ -377,6 +390,34 @@
 
 	[templates addObject: item];
 	[item release];
+
+
+	// NSTouchBarEnterFullScreenTemplate / NSTouchBarExitFullScreenTemplate ...
+	item = [[NSCustomTouchBarItem alloc] initWithIdentifier: @"mame.fullscreen"];
+	button = [NSButton buttonWithTitle: @"Full Screen" target: self action: @selector(toggleFullScreen:)];
+	[item setView: button];
+
+	[templates addObject: item];
+	[item release];
+
+
+	// NSTouchBarAudioOutputMuteTemplate / NSTouchBarAudioOutputVolumeHighTemplate
+	item = [[NSCustomTouchBarItem alloc] initWithIdentifier: @"mame.mute"];
+	button = [NSButton buttonWithTitle: @"Mute" target: self action: @selector(toggleMute:)];
+	[item setView: button];
+
+	[templates addObject: item];
+	[item release];
+
+
+
+	item = [[NSCustomTouchBarItem alloc] initWithIdentifier: @"mame.mouse"];
+	button = [NSButton buttonWithTitle: @"Mouse" target: self action: @selector(toggleMouse:)];
+	[item setView: button];
+
+	[templates addObject: item];
+	[item release];
+
 
 
 	[tb setTemplateItems: templates];
