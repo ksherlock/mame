@@ -35,6 +35,7 @@ enum {
 	NSMenuItem *_videoMenu;
 
 	NSArray *_touchBarButtons;
+	NSTimer *_timer;
 
 	running_machine *_machine;
 	ioport_field *_speed;
@@ -126,6 +127,7 @@ enum {
 	// mouse capture, full screen not available w/ debugger.
 
 	for (NSButton *b in _touchBarButtons) {
+		if ([b isHighlighted]) continue;
 		switch ([b tag]) {
 			case kTagPause:
 				[b setState: _machine->paused() ? NSControlStateValueOn : NSControlStateValueOff];
@@ -386,6 +388,10 @@ enum {
 -(void)dealloc {
 
 	NSMenu *mainMenu = [NSApp mainMenu];
+
+	[_timer invalidate];
+	[_timer release];
+
 	if (_speedMenuItem) [mainMenu removeItem: _speedMenuItem];
 	if (_specialMenuItem) [mainMenu removeItem: _specialMenuItem];
 	if (_videoMenu) [mainMenu removeItem: _videoMenu];
@@ -476,7 +482,6 @@ static NSImage *MouseOnImage(void) {
 	[img setSize: NSMakeSize(24, 24)];
 	[img setTemplate: YES];
 
-	NSLog(@"%@", img);
 	return [img autorelease];
 }
 
@@ -544,7 +549,6 @@ static NSImage *MouseOffImage(void) {
 	[img setSize: NSMakeSize(24, 24)];
 	[img setTemplate: YES];
 
-	NSLog(@"%@", img);
 	return [img autorelease];
 }
 
@@ -638,7 +642,13 @@ static NSImage *MouseOffImage(void) {
 		_touchBarButtons = buttons;
 		[tb setTemplateItems: templates];
 		[NSApp setTouchBar: tb];
+		[NSApp setAutomaticCustomizeTouchBarMenuItemEnabled: YES];
 		[tb release];
+
+		NSTimer *t = [NSTimer scheduledTimerWithTimeInterval: 10.0 target: self selector: @selector(updateButtons) userInfo: nil repeats: YES];
+		[t setTolerance: 5.0];
+
+		_timer = [t retain];
 
 	}
 }
