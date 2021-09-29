@@ -757,7 +757,7 @@ static MenuDelegate *target = nil;
 	{
 		const char *port_name = pty.device().owner()->tag() + 1;
 		if (pty.is_open())
-			std::printf("%s: %s\n", port_name, pty.slave_name());
+			std::printf("%s: %s\n", port_name, pty.slave_name().c_str());
 	}
 
 }
