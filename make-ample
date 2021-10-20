@@ -40,7 +40,7 @@ mame64d:
 # excluding hashes directory for now.
 HASH = apple1.xml \
 	apple2_cass.xml apple2_flop_clcracked.xml apple2_flop_misc.xml apple2_flop_orig.xml \
-	apple2gs_flop_misc.xml apple2gs_flop_orig.xml \
+	apple2gs_flop_misc.xml apple2gs_flop_orig.xml apple2gs_flop_clcracked.xml \
 	apple3.xml cecflop.xml \
 	mac_hdd.xml mac_flop.xml mac_hdflop.xml \
 	softwarelist.dtd
