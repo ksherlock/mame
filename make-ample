@@ -10,6 +10,19 @@ space = $(empty) $(empty)
 all: mame64 mame-data.tgz
 
 
+.PHONY: clean
+clean:
+	$(RM) mame64
+	$(RM) mame-universal
+	$(RM) mame-arm64
+	$(RM) mame-x64
+	$(RM) mame-data.tgz
+
+
+
+.PHONY: release
+release: clean mame-universal mame-data.tgz
+
 mame-universal: mame-arm64 mame-x64
 	lipo -create -output mame-universal mame-arm64 mame-x64
 
@@ -49,8 +62,3 @@ mame-data.tgz:
 	tar cfz mame-data.tgz --disable-copyfile \
 	artwork bgfx ini keymaps language plugins samples uismall.bdf \
 	$(addprefix hash/,$(HASH))
-
-.PHONY: clean
-clean:
-	rm mame64
-	rm mame-data.tgz
