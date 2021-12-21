@@ -263,9 +263,8 @@ enum {
 	for (auto &port : _machine->ioport().ports()) {
 		if (port.first != ":a2_config") continue;
 		for (ioport_field &field : port.second->fields()) {
-			const char *name = field.name();
-			if (!name) continue;
-			if (strcmp("CPU type", name))  continue;
+			std::string name = field.name();
+			if (name != "CPU type")  continue;
 			_speed = &field;
 
 			{
