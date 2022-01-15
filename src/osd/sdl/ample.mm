@@ -207,7 +207,14 @@ enum {
 }
 
 -(void)paste:(id)sender {
+
+	//downcast<sdl_osd_interface &>(_machine->osd()).release_keys();
 	_machine->natkeyboard().paste();
+}
+
+
+-(void)releaseKeys:(id)sender {
+	downcast<sdl_osd_interface &>(_machine->osd()).release_keys();
 }
 
 -(void)setSpeed:(id)sender {
@@ -327,6 +334,10 @@ enum {
 		[item setTarget: self];
 	}
 	{
+		NSMenuItem *item = [menu addItemWithTitle: @"Reset Keyboard" action: @selector(releaseKeys:) keyEquivalent: @""];
+		[item setTarget: self];
+	}
+	{
 		NSMenuItem *item = [NSMenuItem separatorItem]; [menu addItem: item];
 	}
 	{
@@ -334,6 +345,7 @@ enum {
 		[item setKeyEquivalentModifierMask: NSEventModifierFlagOption|NSEventModifierFlagCommand];
 		[item setTarget: self];
 	}
+
 
 	NSMenuItem *item  = [mainMenu addItemWithTitle: @"Special" action: NULL keyEquivalent: @""];
 	_specialMenuItem = [item retain];
