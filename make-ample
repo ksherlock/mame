@@ -40,10 +40,10 @@ mame-x64:
 
 
 
-.PHONY: mame64d
-mame64d:
-	make -j2 SOURCES=${SOURCES} SDL_INI_PATH=. USE_VMNET_HELPER=1 USE_PCAP=0 SDL_FRAMEWORK_PATH="`pwd`/Frameworks" DEBUG=1 SYMBOLS=1 REGENIE=${REGENIE} ARCHOPTS=-DAMPLE
-	install_name_tool -add_rpath ./Frameworks/ mame64d
+#.PHONY: mame64d
+mamed:
+	make -j3 SOURCES=${SOURCES} SDL_INI_PATH=. USE_VMNET_HELPER=1 USE_PCAP=0 SDL_FRAMEWORK_PATH="`pwd`/Frameworks" DEBUG=1 SYMBOLS=1 REGENIE=${REGENIE} ARCHOPTS=-DAMPLE SANITIZE=undefined BUILDDIR=build-debug
+	install_name_tool -add_rpath ./Frameworks/ mamed
 
 #.PHONY: regenie
 #regenie:
