@@ -15933,7 +15933,11 @@ namespace sol { namespace stack {
 			if (!op) {
 				return stack::push(L, nullopt);
 			}
+			#if __APPLE__ && __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ < 101400
+			return stack::push(L, static_cast<QualifiedValueType>(*op));
+			#else
 			return stack::push(L, static_cast<QualifiedValueType>(op.value()));
+			#endif
 		}
 	};
 
