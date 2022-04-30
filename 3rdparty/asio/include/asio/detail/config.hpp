@@ -1951,4 +1951,8 @@
 # endif // !defined(ASIO_DISABLE_STD_HASH)
 #endif // !defined(ASIO_HAS_STD_HASH)
 
+#if __APPLE__ && __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ < 101500
+#undef ASIO_HAS_STD_ALIGNED_ALLOC
+#endif
+
 #endif // ASIO_DETAIL_CONFIG_HPP
