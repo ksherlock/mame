@@ -35,6 +35,41 @@ const char *meta_data::entry_name(meta_name name)
 	return "";
 }
 
+#if __APPLE__ && __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ < 101400
+meta_type meta_value::type() const
+{
+	// MacOS < 10.14 doesn't have a complete std::variant
+	// this is only used in the floppy tool so it doesn't affect Ample MAME.
+	// std::variant<std::string, uint64_t, bool, util::arbitrary_datetime> value;
+	switch(value.index())
+	{
+		case 0: return meta_type::string;
+		case 1: return meta_type::number;
+		case 2: return meta_type::flag;
+		case 3: return meta_type::date;
+		default: return meta_type::number;
+	}
+}
+
+std::string meta_value::to_string() const
+{
+	switch(value.index())
+	{
+		case 0: return as_string();
+		case 1: return util::string_format("0x%x", as_number());
+		case 2: return as_flag() ? "t" : "f";
+		case 3: {
+			auto dt = as_date();
+			return util::string_format("%04d-%02d-%02d %02d:%02d:%02d",
+ 				dt.year, dt.month, dt.day_of_month,
+ 				dt.hour, dt.minute, dt.second);
+		}
+		default: return util::string_format("0x%x", as_number());
+	}
+}
+
+#else
+
 template <class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
 template <class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
@@ -68,5 +103,6 @@ std::string meta_value::to_string() const
 			value);
 	return result;
 }
+#endif
 
 } // namespace fs
