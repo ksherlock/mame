@@ -114,10 +114,6 @@ enum {
 	Sn_RX_WR1,
 	/* 0x042c-0x04ff reserved */
 
-	/* internal variables used in emulation. */
-	Sn_XX_ARP_IP_ADDRESS = 0x00f0,
-	Sn_XX_ARP_OK = 0xf4,
-	Sn_XX_RETRY,
 };
 
 /* Mode Register bits */
@@ -306,6 +302,9 @@ void w5100_device::device_reset()
 
 		// socket[Sn_TX_FSR0] = 0x08;
 		// socket[Sn_TX_FSR1] = 0x00;
+
+		m_timers[sn]->reset();
+		m_sockets[sn].reset();
 	}
 
 
@@ -331,32 +330,40 @@ void w5100_device::device_post_load()
  * timer callback.
  * re-sends timed out ARP and TCP messages.
  * id is the socket #
+ * TODO - param indicates ARP vs TCP, etc
  */
 void w5100_device::device_timer(emu_timer &timer, device_timer_id id, int param)
 {
-	#if 0
-	attotime now = machine().time();
-	for (int sn = 0; sn < 4; ++sn)
-	{
-		uint8_t *socket = m_memory[Sn_BASE + sn * Sn_SIZE];
-		uint8_t &sr = socket[Sn_SR];
-		if (sr == Sn_SR_ARP)
-		{
-			if (m_sockets[sn].start + m_timeout > now)
-			{
-				// change sr back to UDP/IPRAW/OPEN(tcp)
-				socket[Sn_IR] | Sn_IR_TIMEOUT;
-				update_ethernet_irq();
-			}
-			else
-			{
-				/* TODO re-send ARP request */
-			}
-		}
-		// TODO -- TCP stuff
-	}
-	#endif
 
+	int sn = id;
+	uint8_t *socket = m_memory + Sn_BASE + sn * Sn_SIZE;
+
+	int rcr = m_memory[RCR];
+
+	if (++m_sockets[sn].retry > rcr)
+	{
+		int proto = socket[Sn_MR] & 0x0f;
+		uint8_t &sr = socket[Sn_SR];
+		switch(proto)
+		{
+			case Sn_MR_UDP:
+				sr = Sn_SR_UDP;
+				break;
+			case Sn_MR_IPRAW:
+				sr = Sn_SR_IPRAW;
+				break;
+			case Sn_MR_TCP:
+				sr = Sn_SR_CLOSED;
+				break;
+		}
+		timer.reset();
+		socket[Sn_IR] |= Sn_IR_TIMEOUT;
+		update_ethernet_irq();
+	}
+	else
+	{
+		send_arp_request(m_sockets[sn].arp_ip_address);
+	}
 }
 
 
@@ -627,6 +634,7 @@ void w5100_device::socket_command(int sn, int command)
 
 		case Sn_CR_CLOSE:
 			sr = Sn_SR_CLOSED;
+			m_timers[sn]->reset();
 			/* TODO - if UDP Multicast, send IGMP leave message */
 			/* also reset interrupts? */
 			break;
@@ -669,6 +677,12 @@ void w5100_device::socket_open(int sn)
 	socket[Sn_TX_RD1] = 0;
 	socket[Sn_TX_WR0] = 0;
 	socket[Sn_TX_WR1] = 0;
+
+	socket[Sn_TX_FSR0] = m_sockets[sn].tx_buffer_size >> 8;
+	socket[Sn_TX_FSR0] = m_sockets[sn].tx_buffer_size;
+
+	socket[Sn_RX_RSR0] = 0;
+	socket[Sn_RX_RSR1] = 0;
 
 	m_sockets[sn].reset();
 
@@ -726,7 +740,7 @@ static int proto_header_size(int proto)
 }
 
 
-void copy_in(uint8_t *dest, const uint8_t *src, int length, int src_offset, int bank_size)
+static void copy_in(uint8_t *dest, const uint8_t *src, int length, int src_offset, int bank_size)
 {
 	int avail = bank_size - src_offset;
 
@@ -739,7 +753,7 @@ void copy_in(uint8_t *dest, const uint8_t *src, int length, int src_offset, int 
 	}
 }
 
-void copy_out(uint8_t *dest, const uint8_t *src, int length, int dest_offset, int bank_size)
+static void copy_out(uint8_t *dest, const uint8_t *src, int length, int dest_offset, int bank_size)
 {
 	int avail = bank_size - dest_offset;
 
@@ -799,25 +813,27 @@ void w5100_device::socket_send(int sn)
 	}
 	mss = std::min(mss, BUFFER_SIZE);
 
-	int tx_size = std::min(size, mss - header);
-
-	// TODO -- size logic is not correct.
-
 
 	/* for MACRAW/IPRAW  limit to 1514 bytes (w/ header)*/
 
-	memset(buffer, 0, header);
-	copy_in(buffer + header, m_memory + tx_buffer_offset, tx_size, read_ptr, tx_buffer_size);
 
 	// ipraw, udp, tcp - add headers.
 
-	if (proto == Sn_MR_IPRAW)
-		build_ipraw_header(sn, buffer, size);
-
-
 	if (proto == Sn_MR_MACRAW || proto == Sn_MR_IPRAW)
 	{
-		send(buffer, size);
+
+		// MACRAW/IPRAW truncate if too big
+
+		int msize = std::min(size, mss - header);
+
+		memset(buffer, 0, header);
+		copy_in(buffer + header, m_memory + tx_buffer_offset, msize, read_ptr, tx_buffer_size);
+
+
+		if (proto == Sn_MR_IPRAW)
+			build_ipraw_header(sn, buffer, msize);
+
+		send(buffer, msize);
 		socket[Sn_TX_RD0] = write_ptr >> 8;
 		socket[Sn_TX_RD1] = write_ptr;
 		socket[Sn_TX_FSR0] = tx_buffer_size >> 8;
@@ -828,6 +844,28 @@ void w5100_device::socket_send(int sn)
 	}
 
 	// for UDP, break up large packets...
+	if (proto == Sn_MR_UDP)
+	{
+		while (size)
+		{
+			int msize = std::min(size, mss - header);
+
+			memset(buffer, 0, header);
+			copy_in(buffer + header, m_memory + tx_buffer_offset, msize, read_ptr, tx_buffer_size);
+
+			build_udp_header(sn, buffer, msize);
+			send(buffer, msize);
+			size -= msize;
+		}
+
+		socket[Sn_TX_RD0] = write_ptr >> 8;
+		socket[Sn_TX_RD1] = write_ptr;
+		socket[Sn_TX_FSR0] = tx_buffer_size >> 8;
+		socket[Sn_TX_FSR1] = tx_buffer_size;
+		socket[Sn_IR] |= Sn_IR_SEND_OK;
+		update_ethernet_irq();
+		return;
+	}
 
 
 	// for TCP, break up large packets, don't set SEND_OK until all are acked.
@@ -1014,7 +1052,7 @@ bool w5100_device::find_mac(int sn)
 	/* if not local, use the gateway mac address */
 
 	/* UDP/IPRAW - if broadcast ip, (255.255.255.255) or (local | ~subnet) */
-	/* use broadcast ethernet */
+	/* use broadcast ethernet address */
 
 	uint8_t *socket = m_memory + Sn_BASE + sn * Sn_SIZE;
 
@@ -1031,12 +1069,25 @@ bool w5100_device::find_mac(int sn)
 	{
 		/* broadcast ip address */
 		memcpy(&socket[Sn_DHAR0], ETH_BROADCAST, 6);
-		m_sockets[sn].arp_ok = true;
 		m_sockets[sn].arp_ip_address = dest;
+		m_sockets[sn].arp_ok = true;
 		return true;
 	}
 
-	// multi-cast logic here?
+	// multi-cast
+	if ((socket[Sn_MR] & 0x8f) == (Sn_MR_UDP | Sn_MR_MULT))
+	{
+		socket[Sn_DHAR0] = 0x01;
+		socket[Sn_DHAR1] = 0x00;
+		socket[Sn_DHAR2] = 0x5e;
+		socket[Sn_DHAR3] = socket[Sn_DIPR1] & 0x7f;
+		socket[Sn_DHAR4] = socket[Sn_DIPR2];
+		socket[Sn_DHAR5] = socket[Sn_DIPR3];
+		m_sockets[sn].arp_ip_address = dest;
+		m_sockets[sn].arp_ok = true;
+		return true;
+	}
+
 
 	if ((dest & subnet) == (ip & subnet))
 	{
@@ -1055,6 +1106,7 @@ bool w5100_device::find_mac(int sn)
 	return false;
 }
 
+
 void w5100_device::handle_arp_response(uint8_t *buffer, int length)
 {
 	/* if this is an ARP response, possibly update all the Sn_SR_ARP */
@@ -1063,6 +1115,8 @@ void w5100_device::handle_arp_response(uint8_t *buffer, int length)
 	/* queue up the send/synsent */
 	/* if another device claims our MAC address, need to generate a CONFLICT interrupt */
 	/* TODO - comparing IP is not correct when it's a gateway lookup */
+
+	uint32_t ip = read32(buffer + 0x26);
 	for (int sn = 0; sn < 4; ++sn)
 	{
 		uint8_t *socket = m_memory + Sn_BASE + sn * Sn_SIZE;
@@ -1070,10 +1124,11 @@ void w5100_device::handle_arp_response(uint8_t *buffer, int length)
 		int proto = socket[Sn_MR] & 0x0f;
 		if (sr == Sn_SR_ARP)
 		{
-			if (!memcmp(socket + Sn_XX_ARP_IP_ADDRESS, buffer + 0x26 ,4))
+			if (m_sockets[sn].arp_ip_address == ip)
 			{
 				memcpy(socket + Sn_DHAR0, buffer + 0x20, 6);
-				socket[Sn_XX_ARP_OK] = 1;
+				m_sockets[sn].arp_ok = true;
+				m_timers[sn]->reset();
 				switch(proto)
 				{
 					case Sn_MR_IPRAW:
