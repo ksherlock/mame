@@ -1,12 +1,17 @@
 // license:BSD-3-Clause
 // copyright-holders: Kelvin Sherlock
 
-#include "emu.h"
-#include "machine/w5100.h"
-
-#include "util/internet_checksum.h"
 
 /*
+  WizNET W5100
+
+  Based on:
+  W5100 datasheet
+  W5200 datasheet (occasionally better explanations)
+  W5500 datasheet (occasionally better explanations)
+  WIZNet ioLibrary Driver (https://github.com/Wiznet/ioLibrary_Driver)
+  Uthernet II User's and Programmer's Manual
+
   0x0000-0x0012f - common registers
   0x0030-0x03ff - reserved
   0x0400-0x7fff - socket registers
@@ -14,14 +19,21 @@
   0x4000-0x5fff - tx memory
   0x6000-0x7fff - rx memory
 
-  Based on:
-  W5100 datasheet
-  W5200 datasheet (occasionally better explanations)
-  W5500 datasheet (occasionally better explanations)
-  WIZNet ioLibrary Driver (https://github.com/Wiznet/ioLibrary_Driver)
-
  */
 
+
+#include "emu.h"
+#include "machine/w5100.h"
+#include "util/internet_checksum.h"
+
+#define LOG_GENERAL (1U << 0)
+#define LOG_COMMAND (1U << 1)
+#define LOG_FILTER  (1U << 2)
+#define LOG_PACKETS (1U << 3)
+#define LOG_ARP     (1U << 4)
+
+#define VERBOSE (LOG_GENERAL|LOG_COMMAND|LOG_FILTER|LOG_PACKETS|LOG_ARP)
+#include "logmacro.h"
 
 /* indirect mode addresses */
 enum {
@@ -261,15 +273,22 @@ w5100_device::w5100_device(const machine_config &mconfig, device_type type, cons
 void w5100_device::device_start()
 {
 
+	save_pointer(&m_memory[0], "General Registers", 0x400);
+	save_pointer(&m_memory[0x400], "Socket 0 Registers", 0x100);
+	save_pointer(&m_memory[0x500], "Socket 1 Registers", 0x100);
+	save_pointer(&m_memory[0x600], "Socket 2 Registers", 0x100);
+	save_pointer(&m_memory[0x700], "Socket 3 Registers", 0x100);
+	save_pointer(&m_memory[0x4000], "TX Memory", 0x2000);
+	save_pointer(&m_memory[0x6000], "RX Memory", 0x2000);
+	// save_item(NAME(m_memory));
 	save_item(NAME(m_idm));
 	save_item(NAME(m_irq_state));
 
-
+	m_irq_handler.resolve_safe();
 
 	for (int sn = 0; sn < 4; ++ sn)
 		m_timers[sn] = timer_alloc(sn);
 
-	device_reset();
 }
 
 
@@ -340,6 +359,8 @@ void w5100_device::device_timer(emu_timer &timer, device_timer_id id, int param)
 
 	int rcr = m_memory[RCR];
 
+	uint32_t ip = m_sockets[sn].arp_ip_address;
+
 	if (++m_sockets[sn].retry > rcr)
 	{
 		int proto = socket[Sn_MR] & 0x0f;
@@ -356,13 +377,19 @@ void w5100_device::device_timer(emu_timer &timer, device_timer_id id, int param)
 				sr = Sn_SR_CLOSED;
 				break;
 		}
+
+		LOGMASKED(LOG_ARP, "ARP timeout for %d.%d.%d.%d\n",
+			(ip >> 24) & 0xff, (ip >> 16) & 0xff,
+			(ip >> 8) & 0xff, (ip >> 0) & 0xff
+		);
+
 		timer.reset();
 		socket[Sn_IR] |= Sn_IR_TIMEOUT;
 		update_ethernet_irq();
 	}
 	else
 	{
-		send_arp_request(m_sockets[sn].arp_ip_address);
+		send_arp_request(ip);
 	}
 }
 
@@ -417,13 +444,14 @@ void w5100_device::write(uint16_t offset, uint8_t data)
 					m_idm++;
 					if (m_idm == 0x6000) m_idm = 0x4000;
 					if (m_idm == 0x8000) m_idm = 0x6000;
-					if (m_idm == 0x0000) m_idm = 0xe000;
+					if (m_idm == 0x0000) m_idm = 0xe000; // per U2 Programmer's Manual
 				}
 				break;
 		}
 	}
 
 	offset &= 0x7fff;
+	LOG("write(0x%04x, 0x%02x)\n", offset, data);
 
 	switch(offset)
 	{
@@ -455,7 +483,10 @@ void w5100_device::write(uint16_t offset, uint8_t data)
 	{
 		case MR:
 			if (data & MR_RST)
+			{
+				LOGMASKED(LOG_COMMAND, "software reset\n");
 				device_reset();
+			}
 			break;
 
 		case SHAR0:
@@ -521,6 +552,7 @@ uint8_t w5100_device::read(uint16_t offset)
 
 	offset &= 0x7fff;
 
+	if (offset != 0x426 && offset != 0x427) LOG("read(0x%04x)\n", offset);
 	return m_memory[offset];
 }
 
@@ -536,8 +568,9 @@ void w5100_device::update_rmsr(uint8_t value)
 		m_sockets[sn].rx_buffer_size = size;
 		m_sockets[sn].rx_buffer_offset = offset;
 		offset += size;
+		// flag as invalid if offset invalid?
 	}
-	// TODO - if offset > IO_RXBUF + 0x2000 ....
+
 }
 
 void w5100_device::update_tmsr(uint8_t value)
@@ -550,6 +583,9 @@ void w5100_device::update_tmsr(uint8_t value)
 		m_sockets[sn].tx_buffer_size = size;
 		m_sockets[sn].tx_buffer_offset = offset;
 		offset += size;
+
+		// flag as invalid if offset invalid?
+
 
 		/* also update FSR ... */
 		uint8_t *socket = m_memory + Sn_BASE + sn * Sn_SIZE;
@@ -570,9 +606,8 @@ void w5100_device::update_tmsr(uint8_t value)
 		if (fsr > size) fsr -= size;
 		socket[Sn_TX_FSR0] = fsr >> 8;
 		socket[Sn_TX_FSR1] = fsr;
+		LOG("socket %d free size = %d\n", sn, fsr);
 	}
-
-	// TODO - if offset > IO_TXBUF + 0x2000 ....
 
 }
 
@@ -613,26 +648,31 @@ void w5100_device::socket_command(int sn, int command)
 	switch(command)
 	{
 		case Sn_CR_OPEN:
+			LOGMASKED(LOG_COMMAND, "Socket: %d: open\n", sn);
 			if (sr == Sn_SR_CLOSED)
 				socket_open(sn);
 			break;
 
 		case Sn_CR_LISTEN:
+			LOGMASKED(LOG_COMMAND, "Socket: %d: listen\n", sn);
 			if (sr == Sn_SR_INIT)
 				sr = Sn_SR_LISTEN;
 			break;
 
 		case Sn_CR_CONNECT:
+			LOGMASKED(LOG_COMMAND, "Socket: %d: init\n", sn);
 			if (sr == Sn_SR_INIT)
 				socket_connect(sn);
 			break;
 
 		case Sn_CR_DISCON:
+			LOGMASKED(LOG_COMMAND, "Socket: %d: disconnect\n", sn);
 			if (sr == Sn_SR_ESTABLISHED || sr == Sn_SR_CLOSE_WAIT)
 				socket_disconnect(sn);
 			break;
 
 		case Sn_CR_CLOSE:
+			LOGMASKED(LOG_COMMAND, "Socket: %d: close\n", sn);
 			sr = Sn_SR_CLOSED;
 			m_timers[sn]->reset();
 			/* TODO - if UDP Multicast, send IGMP leave message */
@@ -640,24 +680,31 @@ void w5100_device::socket_command(int sn, int command)
 			break;
 
 		case Sn_CR_RECV:
+			LOGMASKED(LOG_COMMAND, "Socket: %d: receive\n", sn);
 			if (sr == Sn_SR_UDP || sr == Sn_SR_IPRAW || sr == Sn_SR_MACRAW || sr == Sn_SR_ESTABLISHED || sr == Sn_SR_CLOSE_WAIT)
 				socket_recv(sn);
 			break;
 
 		case Sn_CR_SEND:
+			LOGMASKED(LOG_COMMAND, "Socket: %d: send\n", sn);
 			if (sr == Sn_SR_UDP || sr == Sn_SR_IPRAW || sr == Sn_SR_MACRAW || sr == Sn_SR_ESTABLISHED || sr == Sn_SR_CLOSE_WAIT)
 				socket_send(sn);
 			break;
 
 		case Sn_CR_SEND_MAC:
+			LOGMASKED(LOG_COMMAND, "Socket: %d: send mac\n", sn);
 			if (sr == Sn_SR_UDP || sr == Sn_SR_IPRAW)
 				socket_send_mac(sn);
 			break;
 
 		case Sn_CR_SEND_KEEP:
+			LOGMASKED(LOG_COMMAND, "Socket: %d: send keep alive\n", sn);
 			if (sr == Sn_SR_ESTABLISHED || sr == Sn_SR_CLOSE_WAIT)
 				socket_send_keep(sn);
 			break;
+		default:
+			LOGMASKED(LOG_COMMAND, "Socket: %d: unknown command (0x%02x)\n", sn, command);
+
 	}
 }
 
@@ -679,7 +726,7 @@ void w5100_device::socket_open(int sn)
 	socket[Sn_TX_WR1] = 0;
 
 	socket[Sn_TX_FSR0] = m_sockets[sn].tx_buffer_size >> 8;
-	socket[Sn_TX_FSR0] = m_sockets[sn].tx_buffer_size;
+	socket[Sn_TX_FSR1] = m_sockets[sn].tx_buffer_size;
 
 	socket[Sn_RX_RSR0] = 0;
 	socket[Sn_RX_RSR1] = 0;
@@ -767,6 +814,7 @@ static void copy_out(uint8_t *dest, const uint8_t *src, int length, int dest_off
 
 }
 
+// TODO -- loopback if sending to own ip address?
 void w5100_device::socket_send(int sn)
 {
 	static const int BUFFER_SIZE = 1514;
@@ -796,8 +844,10 @@ void w5100_device::socket_send(int sn)
 	write_ptr &= (tx_buffer_size - 1);
 
 
-	int size = read_ptr - write_ptr;
+	int size = write_ptr - read_ptr;
 	if (size < 0) size += tx_buffer_size;
+
+	// LOG("send rd=%04x wr=%04x size=%d\n", read_ptr, write_ptr, size);
 
 	int header = proto_header_size(proto);
 	int mss = 1514;
@@ -833,6 +883,7 @@ void w5100_device::socket_send(int sn)
 		if (proto == Sn_MR_IPRAW)
 			build_ipraw_header(sn, buffer, msize);
 
+		dump_bytes(buffer, msize);
 		send(buffer, msize);
 		socket[Sn_TX_RD0] = write_ptr >> 8;
 		socket[Sn_TX_RD1] = write_ptr;
@@ -854,6 +905,7 @@ void w5100_device::socket_send(int sn)
 			copy_in(buffer + header, m_memory + tx_buffer_offset, msize, read_ptr, tx_buffer_size);
 
 			build_udp_header(sn, buffer, msize);
+			dump_bytes(buffer, msize);
 			send(buffer, msize);
 			size -= msize;
 		}
@@ -874,10 +926,12 @@ void w5100_device::socket_send(int sn)
 
 void w5100_device::socket_send_mac(int sock)
 {
+	// same as send but don't perform ARP lookup. UDP/IPRAW only.
 }
 
 void w5100_device::socket_send_keep(int sn)
 {
+	// TCP keep-alive is handled an ACK of the most previously acked message.
 }
 
 void w5100_device::socket_connect(int sn)
@@ -890,31 +944,26 @@ void w5100_device::socket_disconnect(int sn)
 
 void w5100_device::socket_recv(int sn)
 {
-	/* this just bumps pointers */
+	uint8_t *socket = m_memory + Sn_BASE + sn * Sn_SIZE;
+	uint16_t read_ptr = (socket[Sn_RX_RD0] << 8) |  socket[Sn_RX_RD1];
+	uint16_t write_ptr = (socket[Sn_RX_WR0] << 8) |  socket[Sn_RX_WR1];
 
-	#if 0
-
-	uint8_t *base = m_socket_registers + (sock << 8);
-	uint16_t read_ptr = (base[Sn_RX_RD0 + offset] << 8) |  base[Sn_RX_RD1 + offset];
-	uint16_t write_ptr = (base[Sn_RX_WR0 + offset] << 8) |  base[Sn_RX_WR1 + offset];
-
-	uint16_t mask = m_receive_size[sock] - 1;
+	uint16_t mask = m_sockets[sn].rx_buffer_size - 1;
 
 	read_ptr &= mask;
 	write_ptr &= mask;
 
-	int size = read_ptr - write_ptr;
-	if (size < 0) size += m_receive_size[sock];
+	int size = write_ptr - read_ptr;
+	if (size < 0) size += m_sockets[sn].rx_buffer_size;
 
 	// update RSR and trigger a RECV interrupt if data still pending.
-	base[Sn_RX_RSR0] = size >> 8;
-	base[Sn_RX_RSR1] = size & 0xff;
+	socket[Sn_RX_RSR0] = size >> 8;
+	socket[Sn_RX_RSR1] = size & 0xff;
 	if (size)
 	{
-		base[Sn_IR] |= IR_RECV;
+		socket[Sn_IR] |= Sn_IR_RECV;
 		update_ethernet_irq();
 	}
-	#endif
 }
 
 
@@ -934,9 +983,12 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 	int ethertype = -1; // 0x0806 = arp, 0x0800 = ip */
 	int ip_proto = -1;
 	int ip_port = 0;
-	bool macraw = m_memory[Sn_MR + Sn_BASE] == Sn_MR_MACRAW;
+	bool macraw = m_memory[Sn_SR + Sn_BASE] == Sn_SR_MACRAW;
 
-	//int sn = -1;
+
+
+	LOG("recv_cb %d\n", length);
+	dump_bytes(buffer, length);
 
 	if (length < 14) return;
 
@@ -1041,6 +1093,121 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 
 }
 
+/* store UDP, IPRAW, and MACRAW data into the receive buffer */
+/* TCP not handled here!!! */
+void w5100_device::receive(int sn, const uint8_t *buffer, int length)
+{
+
+	LOG("Packet received for socket %d\n", sn);
+
+	uint8_t *socket = m_memory + Sn_BASE + sn * Sn_SIZE;
+
+	static const int MAX_HEADER_SIZE = 8;
+	uint8_t header[MAX_HEADER_SIZE];
+
+	int offset = 0;
+	int header_size = 0;
+
+	int rx_buffer_offset = m_sockets[sn].rx_buffer_offset;
+	int rx_buffer_size = m_sockets[sn].rx_buffer_size;
+
+	uint16_t write_ptr = (socket[Sn_RX_WR0] << 8) | socket[Sn_RX_WR1];
+	uint16_t read_ptr = (socket[Sn_RX_RD0] << 8) | socket[Sn_RX_RD1];
+	// int sr = socket[Sn_SR];
+	int proto = socket[Sn_MR] & 0x0f;
+
+	int mask = rx_buffer_size - 1;
+	write_ptr &= mask;
+	read_ptr &= mask;
+
+	int used = write_ptr - read_ptr;
+	if (used < 0) used += rx_buffer_size;
+
+	switch(proto)
+	{
+		case Sn_MR_MACRAW:
+			offset = 0x00;
+
+			// header: {uint16_t size }
+			// MACRAW length *includes* the 2-byte header.
+			header[0] = (length + 2) >> 8;
+			header[1] = (length + 2);
+
+			header_size = 2;
+			break;
+
+		case Sn_MR_IPRAW:
+			offset = 0x22;
+
+			// header: { uint32_t dest_ip, uint16_t size }
+			header[0] = buffer[0x1e];
+			header[1] = buffer[0x1f];
+			header[2] = buffer[0x20];
+			header[3] = buffer[0x21];
+
+			header[4] = length >> 8;
+			header[5] = length;
+
+			header_size = 6;
+			break;
+
+		case Sn_MR_UDP:
+			offset = 0x30;
+
+			// header { uint32_t dest_ip, uint16_t dest_port, uint16_t size }
+			header[0] = buffer[0x1e];
+			header[1] = buffer[0x1f];
+			header[2] = buffer[0x20];
+			header[3] = buffer[0x21];
+
+			header[4] = buffer[0x24];
+			header[5] = buffer[0x25];
+
+			header[6] = length >> 8;
+			header[7] = length;
+
+			header_size = 8;
+			break;
+		case Sn_MR_TCP:
+			offset = 34 + ((buffer[46] >> 2) & 0xfc); // data offset = tcp header size, in 32-bit words.
+			header_size = 0;
+	}
+
+	// drop the packet if no room.
+	if (length + header_size - offset <= 0) return;
+	if (used + length + header_size - offset > rx_buffer_size)
+	{
+		LOG("No room for data on socket %d\n", sn);
+		return;
+	}
+
+	if (header_size)
+	{
+		copy_out(m_memory + rx_buffer_offset, header, header_size, write_ptr, rx_buffer_size);
+		write_ptr += header_size;
+		write_ptr &= mask;
+		used += header_size;
+	}
+
+	length -= offset;
+
+	copy_out(m_memory + rx_buffer_offset, buffer + offset, length, write_ptr, rx_buffer_size);
+
+	/* update pointers and available */
+	write_ptr += length;
+	write_ptr &= mask;
+	used += length;
+
+	socket[Sn_RX_WR0] = write_ptr >> 8;
+	socket[Sn_RX_WR1] = write_ptr;
+
+	socket[Sn_RX_RSR0] = used >> 8;
+	socket[Sn_RX_RSR1] = used;
+
+	socket[Sn_IR] |= Sn_IR_RECV;
+	update_ethernet_irq();
+}
+
 
 
 
@@ -1053,6 +1220,8 @@ bool w5100_device::find_mac(int sn)
 
 	/* UDP/IPRAW - if broadcast ip, (255.255.255.255) or (local | ~subnet) */
 	/* use broadcast ethernet address */
+
+	// TODO support for own ip address?
 
 	uint8_t *socket = m_memory + Sn_BASE + sn * Sn_SIZE;
 
@@ -1210,6 +1379,9 @@ void w5100_device::send_arp_request(uint32_t ip)
 	message[40] = ip >> 8;
 	message[41] = ip >> 0;
 
+	LOGMASKED(LOG_ARP, "Sending ARP request for %d.%d.%d.%d\n",
+		(ip >> 24) & 0xff, (ip >> 16) & 0xff, (ip >> 8) & 0xff, (ip >> 8) & 0xff
+	);
 	send(message, MESSAGE_SIZE);
 
 }
@@ -1330,110 +1502,6 @@ void w5100_device::handle_ping_response(uint8_t *buffer, int length)
 }
 
 
-/* store UDP, IPRAW, and MACRAW data into the receive buffer */
-/* TCP not handled here!!! */
-void w5100_device::receive(int sn, const uint8_t *buffer, int length)
-{
-	uint8_t *socket = m_memory + Sn_BASE + sn * Sn_SIZE;
-
-	int offset = 0;
-	int header = 0;
-
-	int rx_buffer_offset = m_sockets[sn].rx_buffer_offset;
-	int rx_buffer_size = m_sockets[sn].rx_buffer_size;
-
-	uint16_t write_ptr = (socket[Sn_RX_WR0] << 8) | socket[Sn_RX_WR1];
-	uint16_t read_ptr = (socket[Sn_RX_RD0] << 8) | socket[Sn_RX_RD1];
-	int sr = socket[Sn_SR];
-	int proto = socket[Sn_MR] & 0x0f;
-
-	int mask = rx_buffer_size - 1;
-	write_ptr &= mask;
-	read_ptr &= mask;
-
-	int used = write_ptr - read_ptr;
-	if (used < 0) used += rx_buffer_size;
-
-	switch(proto)
-	{
-		case Sn_MR_MACRAW:
-			offset = 0x00;
-			header = 2;
-			break;
-		case Sn_MR_IPRAW:
-			offset = 0x22;
-			header = 6;
-			break;
-		case Sn_MR_UDP:
-			offset = 0x30;
-			header = 8;
-			break;
-		case Sn_MR_TCP:
-			offset = 34 + (buffer[46] >> 2) & 0xfc; // data offset = tcp header size, in 32-bit words.
-			header = 0;
-	}
-
-	// drop the packet if no room.
-	if (length + header - offset <= 0) return;
-	if (used + length + header - offset > rx_buffer_size) return;
-
-
-	if (sr == Sn_SR_MACRAW)
-	{
-		// 2-byte size header
-		m_memory[rx_buffer_offset + (write_ptr++ & mask)] = length >> 8;
-		m_memory[rx_buffer_offset + (write_ptr++ & mask)] = length;
-	}
-
-	if (sr == Sn_SR_UDP)
-	{
-		// 8-byte dest-ip, dest-port, size header
-
-		m_memory[rx_buffer_offset + (write_ptr++ & mask)] = buffer[0x1e];
-		m_memory[rx_buffer_offset + (write_ptr++ & mask)] = buffer[0x1f];
-		m_memory[rx_buffer_offset + (write_ptr++ & mask)] = buffer[0x20];
-		m_memory[rx_buffer_offset + (write_ptr++ & mask)] = buffer[0x21];
-
-		m_memory[rx_buffer_offset + (write_ptr++ & mask)] = buffer[0x24];
-		m_memory[rx_buffer_offset + (write_ptr++ & mask)] = buffer[0x25];
-
-		m_memory[rx_buffer_offset + (write_ptr++ & mask)] = length >> 8;
-		m_memory[rx_buffer_offset + (write_ptr++ & mask)] = length;
-	}
-
-	if (sr == Sn_SR_IPRAW)
-	{
-		// 6-byte dest-ip, size header
-
-		m_memory[rx_buffer_offset + (write_ptr++ & mask)] = buffer[0x1e];
-		m_memory[rx_buffer_offset + (write_ptr++ & mask)] = buffer[0x1f];
-		m_memory[rx_buffer_offset + (write_ptr++ & mask)] = buffer[0x20];
-		m_memory[rx_buffer_offset + (write_ptr++ & mask)] = buffer[0x21];
-
-		m_memory[rx_buffer_offset + (write_ptr++ & mask)] = length >> 8;
-		m_memory[rx_buffer_offset + (write_ptr++ & mask)] = length;
-	}
-
-	length -= offset;
-	write_ptr &= mask;
-
-	copy_out(m_memory + rx_buffer_offset, buffer + offset, length, write_ptr, rx_buffer_size);
-
-	/* update pointers and available */
-	length += header;
-	write_ptr = (write_ptr + length) & mask;
-	used += length;
-
-	socket[Sn_RX_WR0] = write_ptr >> 8;
-	socket[Sn_RX_WR1] = write_ptr;
-
-	socket[Sn_RX_RSR0] = used >> 8;
-	socket[Sn_RX_RSR1] = used;
-
-	socket[Sn_IR] |= Sn_IR_RECV;
-	update_ethernet_irq();
-}
-
 
 #if 0
 
@@ -1501,6 +1569,38 @@ void w5100_device::recv_complete_cb(int result)
 void w5100_device::send_complete_cb(int result)
 {}
 #endif
+
+
+void w5100_device::dump_bytes(const uint8_t *buffer, int length)
+{
+	if (VERBOSE & LOG_PACKETS)
+	{
+		static char hex[] = "0123456789abcdef";
+		char dump[16 *3 + 2];
+		int j = 0;
+
+		for (int i = 0; i < length; ++i)
+		{
+			uint8_t c = buffer[i];
+			dump[j++] = hex[c >> 4];
+			dump[j++] = hex[c & 0x0f];
+			dump[j++] = ' ';
+
+			if ((i & 0x0f) == 0x0f)
+			{
+				dump[--j] = 0;
+				LOGMASKED(LOG_PACKETS, "%s\n", dump);
+				j = 0;
+			}
+		}
+		if (j > 0)
+		{
+			dump[--j] = 0; 
+			LOGMASKED(LOG_PACKETS, "%s\n", dump);
+
+		}
+	}
+}
 
 
 DEFINE_DEVICE_TYPE(W5100, w5100_device, "w5100", "WIZNet W5100 Ethernet Controller")
