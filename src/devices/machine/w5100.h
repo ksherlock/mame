@@ -71,6 +71,7 @@ private:
 	void dump_bytes(const uint8_t *buffer, int length);
 
 	uint16_t m_idm = 0;
+	uint16_t m_identification = 0;
 	uint8_t m_irq_state = 0;
 	emu_timer *m_timers[4]{};
 

@@ -3,13 +3,14 @@
 
 
 /*
-  WizNET W5100
+  WIZnet W5100
 
   Based on:
   W5100 datasheet
   W5200 datasheet (occasionally better explanations)
   W5500 datasheet (occasionally better explanations)
-  WIZNet ioLibrary Driver (https://github.com/Wiznet/ioLibrary_Driver)
+  WIZnet ioLibrary Driver (https://github.com/Wiznet/ioLibrary_Driver)
+  https://docs.wiznet.io/Product/iEthernet/W5100/
   Uthernet II User's and Programmer's Manual
 
   0x0000-0x0012f - common registers
@@ -112,6 +113,8 @@ enum {
 	Sn_TOS,
 	Sn_TTL,
 	/* 0x17-0x1f reserved */
+	/* 0x1e is Sn_RX_BUF_SIZE on w5100s (RMSR) */
+	/* 0x1g is Sn_TX_BUF_SIZE on w5100s (TMSR) */
 	Sn_TX_FSR0 = 0x20,
 	Sn_TX_FSR1,
 	Sn_TX_RD0,
@@ -281,7 +284,9 @@ void w5100_device::device_start()
 	save_pointer(&m_memory[0x4000], "TX Memory", 0x2000);
 	save_pointer(&m_memory[0x6000], "RX Memory", 0x2000);
 	// save_item(NAME(m_memory));
+
 	save_item(NAME(m_idm));
+	save_item(NAME(m_identification));
 	save_item(NAME(m_irq_state));
 
 	m_irq_handler.resolve_safe();
@@ -552,7 +557,7 @@ uint8_t w5100_device::read(uint16_t offset)
 
 	offset &= 0x7fff;
 
-	if (offset != 0x426 && offset != 0x427) LOG("read(0x%04x)\n", offset);
+	// if (offset != 0x426 && offset != 0x427) LOG("read(0x%04x)\n", offset);
 	return m_memory[offset];
 }
 
@@ -849,7 +854,7 @@ void w5100_device::socket_send(int sn)
 
 	// LOG("send rd=%04x wr=%04x size=%d\n", read_ptr, write_ptr, size);
 
-	int header = proto_header_size(proto);
+	int header_size = proto_header_size(proto);
 	int mss = 1514;
 
 	switch(proto)
@@ -874,12 +879,13 @@ void w5100_device::socket_send(int sn)
 
 		// MACRAW/IPRAW truncate if too big
 
-		int msize = std::min(size, mss - header);
+		int msize = std::min(size, mss - header_size);
 
-		memset(buffer, 0, header);
-		copy_in(buffer + header, m_memory + tx_buffer_offset, msize, read_ptr, tx_buffer_size);
+		memset(buffer, 0, header_size);
+		copy_in(buffer + header_size, m_memory + tx_buffer_offset, msize, read_ptr, tx_buffer_size);
 
 
+		msize += header_size;
 		if (proto == Sn_MR_IPRAW)
 			build_ipraw_header(sn, buffer, msize);
 
@@ -899,14 +905,16 @@ void w5100_device::socket_send(int sn)
 	{
 		while (size)
 		{
-			int msize = std::min(size, mss - header);
+			int msize = std::min(size, mss - header_size);
 
-			memset(buffer, 0, header);
-			copy_in(buffer + header, m_memory + tx_buffer_offset, msize, read_ptr, tx_buffer_size);
+			memset(buffer, 0, header_size);
+			copy_in(buffer + header_size, m_memory + tx_buffer_offset, msize, read_ptr, tx_buffer_size);
+			msize += header_size;
 
 			build_udp_header(sn, buffer, msize);
 			dump_bytes(buffer, msize);
 			send(buffer, msize);
+			msize -= header_size;
 			size -= msize;
 		}
 
@@ -988,6 +996,7 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 
 
 	LOG("recv_cb %d\n", length);
+	length -= 4; // strip the FCS
 	dump_bytes(buffer, length);
 
 	if (length < 14) return;
@@ -1061,6 +1070,8 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 		// todo -- TCP...
 	}
 
+	/* W5100s documentation suggests PING and ARP will be handled internally AND passed to MACRAW */
+	/* (ping will not be handled internally if there is an open ICMP IPRAW socket) */
 
 
 	/* if socket 0 is an open macraw socket, it can accept anything. */
@@ -1069,6 +1080,7 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 		receive(0, buffer, length);
 		return;
 	}
+
 
 	// a ICMP destination unreachable message from a UDP will
 	// generate an unreachable interrupt and set unreachable ip/port registers.
@@ -1138,6 +1150,7 @@ void w5100_device::receive(int sn, const uint8_t *buffer, int length)
 
 		case Sn_MR_IPRAW:
 			offset = 0x22;
+			length -= offset;
 
 			// header: { uint32_t dest_ip, uint16_t size }
 			header[0] = buffer[0x1e];
@@ -1153,6 +1166,7 @@ void w5100_device::receive(int sn, const uint8_t *buffer, int length)
 
 		case Sn_MR_UDP:
 			offset = 0x30;
+			length -= offset;
 
 			// header { uint32_t dest_ip, uint16_t dest_port, uint16_t size }
 			header[0] = buffer[0x1e];
@@ -1170,12 +1184,13 @@ void w5100_device::receive(int sn, const uint8_t *buffer, int length)
 			break;
 		case Sn_MR_TCP:
 			offset = 34 + ((buffer[46] >> 2) & 0xfc); // data offset = tcp header size, in 32-bit words.
+			length -= offset;
 			header_size = 0;
 	}
 
 	// drop the packet if no room.
-	if (length + header_size - offset <= 0) return;
-	if (used + length + header_size - offset > rx_buffer_size)
+	if (length + header_size <= 0) return;
+	if (used + length + header_size > rx_buffer_size)
 	{
 		LOG("No room for data on socket %d\n", sn);
 		return;
@@ -1189,14 +1204,14 @@ void w5100_device::receive(int sn, const uint8_t *buffer, int length)
 		used += header_size;
 	}
 
-	length -= offset;
-
 	copy_out(m_memory + rx_buffer_offset, buffer + offset, length, write_ptr, rx_buffer_size);
 
 	/* update pointers and available */
 	write_ptr += length;
 	write_ptr &= mask;
 	used += length;
+
+	LOG("used = %d\n", used);
 
 	socket[Sn_RX_WR0] = write_ptr >> 8;
 	socket[Sn_RX_WR1] = write_ptr;
@@ -1286,6 +1301,12 @@ void w5100_device::handle_arp_response(uint8_t *buffer, int length)
 	/* TODO - comparing IP is not correct when it's a gateway lookup */
 
 	uint32_t ip = read32(buffer + 0x26);
+
+	LOGMASKED(LOG_ARP, "Received ARP response for %d.%d.%d.%d\n",
+		(ip >> 24) & 0xff, (ip >> 16) & 0xff,
+		(ip >> 8) & 0xff, (ip >> 0) & 0xff
+	);
+
 	for (int sn = 0; sn < 4; ++sn)
 	{
 		uint8_t *socket = m_memory + Sn_BASE + sn * Sn_SIZE;
@@ -1380,7 +1401,8 @@ void w5100_device::send_arp_request(uint32_t ip)
 	message[41] = ip >> 0;
 
 	LOGMASKED(LOG_ARP, "Sending ARP request for %d.%d.%d.%d\n",
-		(ip >> 24) & 0xff, (ip >> 16) & 0xff, (ip >> 8) & 0xff, (ip >> 8) & 0xff
+		(ip >> 24) & 0xff, (ip >> 16) & 0xff,
+		(ip >> 8) & 0xff, (ip >> 0) & 0xff
 	);
 	send(message, MESSAGE_SIZE);
 
@@ -1400,13 +1422,15 @@ void w5100_device::build_ipraw_header(int sn, uint8_t *buffer, int length)
 
 	length -= 14;
 
+	++m_identification;
+
 	// ip header
 	buffer[14] = 0x45; // IPv4, length = 5*4
 	buffer[15] = socket[Sn_TOS];
 	buffer[16] = length >> 8; // total length
 	buffer[17] = length;
-	buffer[18] = 0; // identification
-	buffer[19] = 0;
+	buffer[18] = m_identification >> 8; // identification
+	buffer[19] = m_identification;
 	buffer[20] = 0x40; // flags - don't fragment
 	buffer[21] = 0x00;
 	buffer[22] = socket[Sn_TTL];
@@ -1434,13 +1458,15 @@ void w5100_device::build_udp_header(int sn, uint8_t *buffer, int length)
 
 	length -= 14;
 
+	++m_identification;
+
 	// ip header
 	buffer[14] = 0x45; // IPv4, length = 5*4
 	buffer[15] = socket[Sn_TOS];
 	buffer[16] = length >> 8; // total length
 	buffer[17] = length;
-	buffer[18] = 0; // identification
-	buffer[19] = 0;
+	buffer[18] = m_identification >> 8; // identification
+	buffer[19] = m_identification;
 	buffer[20] = 0x40; // flags - don't fragment
 	buffer[21] = 0x00;
 	buffer[22] = socket[Sn_TTL];
@@ -1603,4 +1629,4 @@ void w5100_device::dump_bytes(const uint8_t *buffer, int length)
 }
 
 
-DEFINE_DEVICE_TYPE(W5100, w5100_device, "w5100", "WIZNet W5100 Ethernet Controller")
+DEFINE_DEVICE_TYPE(W5100, w5100_device, "w5100", "WIZnet W5100 Ethernet Controller")
