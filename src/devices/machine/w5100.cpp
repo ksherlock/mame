@@ -776,12 +776,13 @@ void w5100_device::socket_open(int sn)
 
 	m_sockets[sn].reset();
 
-	LOGMASKED(LOG_COMMAND, "Opening socket %d as %s rx = %04x/%04x, tx=%04x/%04x\n",
+	LOGMASKED(LOG_COMMAND, "Opening socket %d as %s tx = %04x/%04x, rx=%04x/%04x\n",
 		sn, proto_name(proto),
-		m_sockets[sn].rx_buffer_offset,
-		m_sockets[sn].rx_buffer_size,
 		m_sockets[sn].tx_buffer_offset,
-		m_sockets[sn].tx_buffer_size
+		m_sockets[sn].tx_buffer_size,
+		m_sockets[sn].rx_buffer_offset,
+		m_sockets[sn].rx_buffer_size
+
 	);
 
 	switch (proto)
@@ -1313,7 +1314,11 @@ bool w5100_device::find_mac(int sn)
 
 	socket[Sn_SR] = Sn_SR_ARP;
 
-	// TODO -- timer...
+	/* Retry Timeout Register, 1 = 100us */
+	int rtr = (m_memory[RTR0] << 8) | m_memory[RTR1];
+	if (!rtr) rtr = 0x2000;
+	attotime tm = attotime::from_usec(rtr * 100);
+	m_timers[sn].adjust(tm, 0, tm);
 
 	send_arp_request(dest);
 	return false;
@@ -1331,7 +1336,7 @@ void w5100_device::handle_arp_reply(uint8_t *buffer, int length)
 
 	uint32_t ip = read32(buffer + 0x1c);
 
-	LOGMASKED(LOG_ARP, "Received ARP response for %d.%d.%d.%d\n",
+	LOGMASKED(LOG_ARP, "Received ARP reply for %d.%d.%d.%d\n",
 		(ip >> 24) & 0xff, (ip >> 16) & 0xff,
 		(ip >> 8) & 0xff, (ip >> 0) & 0xff
 	);
@@ -1396,6 +1401,7 @@ void w5100_device::handle_arp_request(uint8_t *buffer, int length)
 	memcpy(message + 28, &m_memory[SIPR0], 4); // sender ip
 	memcpy(message + 32, buffer + 22, 10); // dest mac + ip.
 
+	LOGMASKED(LOG_ARP, "Replying to ARP request\n");
 	send(message, MESSAGE_SIZE);
 }
 
