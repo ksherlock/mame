@@ -57,8 +57,8 @@ private:
 	void send_arp_request(uint32_t ip);
 
 	void handle_arp_request(uint8_t *buffer, int length);
-	void handle_arp_response(uint8_t *buffer, int length);
-	void handle_ping_response(uint8_t *buffer, int length);
+	void handle_arp_reply(uint8_t *buffer, int length);
+	void handle_ping_reply(uint8_t *buffer, int length);
 
 	void receive(int sn, const uint8_t *buffer, int length);
 

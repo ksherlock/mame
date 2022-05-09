@@ -665,7 +665,7 @@ void w5100_device::socket_command(int sn, int command)
 			break;
 
 		case Sn_CR_CONNECT:
-			LOGMASKED(LOG_COMMAND, "Socket: %d: init\n", sn);
+			LOGMASKED(LOG_COMMAND, "Socket: %d: connect\n", sn);
 			if (sr == Sn_SR_INIT)
 				socket_connect(sn);
 			break;
@@ -713,6 +713,44 @@ void w5100_device::socket_command(int sn, int command)
 	}
 }
 
+
+static int proto_header_size(int proto)
+{
+	switch(proto)
+	{
+		case Sn_MR_MACRAW:
+			return 0;
+			break;
+		case Sn_MR_IPRAW:
+			return 14 + 20;
+			break;
+		case Sn_MR_UDP:
+			return 14 + 20 + 8;
+			break;
+		case Sn_MR_TCP:
+			return 14 + 20 + 32; // TCP header is variable
+			break;
+		default:
+			return 0;
+	}	
+}
+
+
+static const char *proto_name(int proto)
+{
+	switch(proto)
+	{
+		case Sn_MR_CLOSED: return "CLOSED";
+		case Sn_MR_UDP: return "UDP";
+		case Sn_MR_TCP: return "TCP";
+		case Sn_MR_IPRAW: return "IPRAW";
+		case Sn_MR_MACRAW: return "MACRAW";
+		case Sn_MR_PPPoE: return "PPPoE";
+		default: return "???";
+	}
+}
+
+
 void w5100_device::socket_open(int sn)
 {
 	uint8_t *socket = m_memory + Sn_BASE + (Sn_SIZE * sn);
@@ -737,6 +775,14 @@ void w5100_device::socket_open(int sn)
 	socket[Sn_RX_RSR1] = 0;
 
 	m_sockets[sn].reset();
+
+	LOGMASKED(LOG_COMMAND, "Opening socket %d as %s rx = %04x/%04x, tx=%04x/%04x\n",
+		sn, proto_name(proto),
+		m_sockets[sn].rx_buffer_offset,
+		m_sockets[sn].rx_buffer_size,
+		m_sockets[sn].tx_buffer_offset,
+		m_sockets[sn].tx_buffer_size
+	);
 
 	switch (proto)
 	{
@@ -768,27 +814,6 @@ void w5100_device::socket_open(int sn)
 		case Sn_MR_CLOSED: /* closed */
 			break;
 	}
-}
-
-static int proto_header_size(int proto)
-{
-	switch(proto)
-	{
-		case Sn_MR_MACRAW:
-			return 0;
-			break;
-		case Sn_MR_IPRAW:
-			return 14 + 20;
-			break;
-		case Sn_MR_UDP:
-			return 14 + 20 + 8;
-			break;
-		case Sn_MR_TCP:
-			return 14 + 20 + 32; // TCP header is variable
-			break;
-		default:
-			return 0;
-	}	
 }
 
 
@@ -1028,7 +1053,7 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 
 		if (arp_op == ARP_REPLY && is_unicast)
 		{
-			handle_arp_response(buffer, length);
+			handle_arp_reply(buffer, length);
 		}
 		if (arp_op == ARP_REQUEST && (is_broadcast || is_unicast) && !macraw)
 		{
@@ -1099,7 +1124,7 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 	// respond to ICMP ping
 	if (is_icmp && is_unicast && (m_memory[MR] & MR_PB) == 0 && buffer[0x22] == ICMP_ECHO_REQUEST)
 	{
-		handle_ping_response(buffer, length);
+		handle_ping_reply(buffer, length);
 		return;
 	}
 
@@ -1259,6 +1284,8 @@ bool w5100_device::find_mac(int sn)
 	}
 
 	// multi-cast
+	// some documenation states caller should set up DHAR, some sample
+	// code doesn't do that.
 	if ((socket[Sn_MR] & 0x8f) == (Sn_MR_UDP | Sn_MR_MULT))
 	{
 		socket[Sn_DHAR0] = 0x01;
@@ -1273,7 +1300,7 @@ bool w5100_device::find_mac(int sn)
 	}
 
 
-	if ((dest & subnet) == (ip & subnet))
+	if ((dest & subnet) != (ip & subnet))
 	{
 		dest = gateway;
 		if (m_sockets[sn].arp_ok && m_sockets[sn].arp_ip_address == dest)
@@ -1284,6 +1311,8 @@ bool w5100_device::find_mac(int sn)
 	m_sockets[sn].arp_ok = false;
 	m_sockets[sn].retry = 0;
 
+	socket[Sn_SR] = Sn_SR_ARP;
+
 	// TODO -- timer...
 
 	send_arp_request(dest);
@@ -1291,7 +1320,7 @@ bool w5100_device::find_mac(int sn)
 }
 
 
-void w5100_device::handle_arp_response(uint8_t *buffer, int length)
+void w5100_device::handle_arp_reply(uint8_t *buffer, int length)
 {
 	/* if this is an ARP response, possibly update all the Sn_SR_ARP */
 	/* keep a separate mac for the gateway instead of re-checking every time? */
@@ -1300,7 +1329,7 @@ void w5100_device::handle_arp_response(uint8_t *buffer, int length)
 	/* if another device claims our MAC address, need to generate a CONFLICT interrupt */
 	/* TODO - comparing IP is not correct when it's a gateway lookup */
 
-	uint32_t ip = read32(buffer + 0x26);
+	uint32_t ip = read32(buffer + 0x1c);
 
 	LOGMASKED(LOG_ARP, "Received ARP response for %d.%d.%d.%d\n",
 		(ip >> 24) & 0xff, (ip >> 16) & 0xff,
@@ -1316,7 +1345,7 @@ void w5100_device::handle_arp_response(uint8_t *buffer, int length)
 		{
 			if (m_sockets[sn].arp_ip_address == ip)
 			{
-				memcpy(socket + Sn_DHAR0, buffer + 0x20, 6);
+				memcpy(socket + Sn_DHAR0, buffer + 0x16, 6);
 				m_sockets[sn].arp_ok = true;
 				m_timers[sn]->reset();
 				switch(proto)
@@ -1495,7 +1524,7 @@ void w5100_device::build_udp_header(int sn, uint8_t *buffer, int length)
 	buffer[25] = crc;
 }
 
-void w5100_device::handle_ping_response(uint8_t *buffer, int length)
+void w5100_device::handle_ping_reply(uint8_t *buffer, int length)
 {
 	uint16_t crc;
 
