@@ -39,7 +39,7 @@ private:
 
 	void socket_command(int sn, int command);
 	void socket_open(int sn);
-	// void socket_close(int sn);
+	void socket_close(int sn);
 	void socket_recv(int sn);
 	void socket_send(int sn);
 	void socket_send_mac(int sn);

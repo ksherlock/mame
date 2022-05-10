@@ -225,8 +225,10 @@ enum {
 	ETHERTYPE_IP = 0x0800,
 	ETHERTYPE_ARP = 0x0806,
 
-	ARP_REQUEST = 0x01, // rfc 826
-	ARP_REPLY = 0x02,
+	ARP_OP_REQUEST = 0x01, // rfc 826
+	ARP_OP_REPLY = 0x02,
+	ARP_HARDWARE_ETHERNET = 1,
+
 	ICMP_ECHO_REPLY = 0x00, // rfc 792
 	ICMP_DESTINATION_UNREACHABLE = 0x03,
 	ICMP_ECHO_REQUEST = 0x8,
@@ -236,6 +238,50 @@ enum {
 	IP_TCP = 6,
 	IP_UDP = 17,
 
+};
+
+enum {
+	o_ETHERNET_DEST = 0,
+	o_ETHERNET_SRC = 6,
+	o_ETHERNET_TYPE = 12,
+};
+
+enum {
+	o_IP_TTL = 22,
+	o_IP_PROTOCOL = 23,
+	o_IP_CHECKSUM = 24,
+	o_IP_SRC_ADDRESS = 26,
+	o_IP_DEST_ADDRESS = 30,
+	// TODO - may include header options if IHL > 5
+};
+
+enum {
+	o_UDP_SRC_PORT = 34,
+	o_UDP_DEST_PORT = 36,
+	o_UDP_LENGTH = 38,
+	o_UDP_CHECKSUM = 40,
+
+};
+
+enum {
+	o_TCP_SRC_PORT = 34,
+	o_TCP_DEST_PORT = 36,
+	// TODO - may include options if data offset > 5
+
+};
+
+enum {
+	o_ICMP_TYPE = 34,
+};
+
+
+enum {
+	// offsets
+	o_ARP_OPCODE = 20,
+	o_ARP_SHA = 22,
+	o_ARP_SPA = 28,
+	o_ARP_THA = 32,
+	o_ARP_TPA = 38,
 };
 
 
@@ -678,10 +724,7 @@ void w5100_device::socket_command(int sn, int command)
 
 		case Sn_CR_CLOSE:
 			LOGMASKED(LOG_COMMAND, "Socket: %d: close\n", sn);
-			sr = Sn_SR_CLOSED;
-			m_timers[sn]->reset();
-			/* TODO - if UDP Multicast, send IGMP leave message */
-			/* also reset interrupts? */
+			socket_close(sn);
 			break;
 
 		case Sn_CR_RECV:
@@ -776,14 +819,43 @@ void w5100_device::socket_open(int sn)
 
 	m_sockets[sn].reset();
 
-	LOGMASKED(LOG_COMMAND, "Opening socket %d as %s tx = %04x/%04x, rx=%04x/%04x\n",
-		sn, proto_name(proto),
-		m_sockets[sn].tx_buffer_offset,
-		m_sockets[sn].tx_buffer_size,
-		m_sockets[sn].rx_buffer_offset,
-		m_sockets[sn].rx_buffer_size
+	if (VERBOSE & LOG_COMMAND)
+	{
+		char extra[32];
+		switch(proto)
+		{
+			#if 0
+			case Sn_MR_TCP:
+				sbprintf(extra, 32, "ip = %d.%d.%d.%d:%d",
+					socket[Sn_DIPR0],
+					socket[Sn_DIPR1],
+					socket[Sn_DIPR2],
+					socket[Sn_DIPR3],
+					(socket[Sn_DPORT0] << 8) | socket[Sn_DPORT1]
+				);
+				break;
+			case Sn_MR_UDP:
+				snprintf(extra, 32, "port = %d",
+					(socket[Sn_DPORT0] << 8) | socket[Sn_DPORT1]
+				);
+				break;
+			#endif
+			case Sn_MR_IPRAW:
+				snprintf(extra, 32, "proto = %d", socket[Sn_PROTO]);
+				break;
+			default:
+				extra[0] = 0;
+		}
+		LOGMASKED(LOG_COMMAND, "Opening socket %d as %s tx = %04x/%04x, rx=%04x/%04x %s\n",
+			sn, proto_name(proto),
+			m_sockets[sn].tx_buffer_offset,
+			m_sockets[sn].tx_buffer_size,
+			m_sockets[sn].rx_buffer_offset,
+			m_sockets[sn].rx_buffer_size,
+			extra
 
-	);
+		);
+	}
 
 	switch (proto)
 	{
@@ -815,6 +887,19 @@ void w5100_device::socket_open(int sn)
 		case Sn_MR_CLOSED: /* closed */
 			break;
 	}
+}
+
+void w5100_device::socket_close(int sn)
+{
+
+	uint8_t *socket = m_memory + Sn_BASE + (Sn_SIZE * sn);
+
+	socket[Sn_SR] = Sn_SR_CLOSED;
+	m_timers[sn]->reset();
+	/* TODO - if UDP Multicast, send IGMP leave message */
+	/* also reset interrupts? */
+	// socket[Sn_IR] = 0;
+
 }
 
 
@@ -1001,7 +1086,16 @@ void w5100_device::socket_recv(int sn)
 }
 
 
+/*
 
+5100s page 77:
+
+MACRAW Mode SOCKET 0 does not receive any Data Packet for other SOCKET
+but it receives ARP Request and PING Request (If IPRAW Mode SOCKET does
+not support ICMP). Even though MACRAW Mode SOCKET 0 receives ARP and
+PING Request, W5100S transmits automatically ARP and PING Reply.
+
+*/
 
 void w5100_device::recv_cb(u8 *buffer, int length)
 {
@@ -1029,6 +1123,8 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 
 	ethertype = (buffer[12] << 8) | buffer[13];
 
+
+	// TODO - local broadcast? (ip | ~netmask)
 	if (buffer[0] & 0x01)
 	{
 		if (!memcmp(buffer, ETH_BROADCAST, 6)) is_broadcast = true;
@@ -1050,13 +1146,13 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 	if (ethertype == ETHERTYPE_ARP)
 	{
 		if (length < 16) return;
-		int arp_op = (buffer[0x14] << 8) | buffer[0x15];
+		int arp_op = (buffer[o_ARP_OPCODE] << 8) | buffer[o_ARP_OPCODE +1];
 
-		if (arp_op == ARP_REPLY && is_unicast)
+		if (arp_op == ARP_OP_REPLY)
 		{
 			handle_arp_reply(buffer, length);
 		}
-		if (arp_op == ARP_REQUEST && (is_broadcast || is_unicast) && !macraw)
+		if (arp_op == ARP_OP_REQUEST)
 		{
 			handle_arp_request(buffer, length);
 		}
@@ -1065,11 +1161,11 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 	if (ethertype == ETHERTYPE_IP)
 	{
 		if (length < 34) return;
-		ip_proto = buffer[14 + 9];
+		ip_proto = buffer[o_IP_PROTOCOL];
 		if (ip_proto == IP_ICMP) is_icmp = true;
 		if (ip_proto == IP_TCP) is_tcp = true;
 		if (ip_proto == IP_UDP) is_udp = true;
-		if (is_udp || is_tcp) ip_port = (buffer[34 + 2] << 8) | buffer[34 + 3];
+		if (is_udp || is_tcp) ip_port = (buffer[o_TCP_DEST_PORT] << 8) | buffer[o_TCP_DEST_PORT + 1];
 
 	}
 
@@ -1096,38 +1192,39 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 		// todo -- TCP...
 	}
 
-	/* W5100s documentation suggests PING and ARP will be handled internally AND passed to MACRAW */
-	/* (ping will not be handled internally if there is an open ICMP IPRAW socket) */
 
+
+
+	if (is_icmp && is_unicast)
+	{
+		int icmp_type = buffer[o_ICMP_TYPE];
+
+		if (icmp_type == ICMP_DESTINATION_UNREACHABLE && buffer[51] == IP_UDP)
+		{
+			// an ICMP destination unreachable message from a UDP will
+			// generate an unreachable interrupt and set unreachable ip/port registers.
+
+			/* check for an open udp port matching the source/destination port? */
+			memcpy(m_memory + UIPR0, buffer + 58, 4); 
+			memcpy(m_memory + UPORT0, buffer + 64, 2);
+			m_memory[IR] | IR_UNREACH;
+			update_ethernet_irq();
+		}
+
+		// respond to ICMP ping
+		if (icmp_type == ICMP_ECHO_REQUEST && (m_memory[MR] & MR_PB) == 0)
+		{
+			handle_ping_reply(buffer, length);
+		}
+	}
 
 	/* if socket 0 is an open macraw socket, it can accept anything. */
 	if (macraw)
-	{
 		receive(0, buffer, length);
-		return;
-	}
 
+	// TODO -- 5100s specifies that it sends RST (for TCP) and ICMP unreachable (for UDP)
+	// if no matching port. (with register to disable).
 
-	// a ICMP destination unreachable message from a UDP will
-	// generate an unreachable interrupt and set unreachable ip/port registers.
-
-	if (is_icmp && is_unicast && buffer[0x22] == ICMP_DESTINATION_UNREACHABLE && buffer[51] == IP_UDP)
-	{
-		/* check for an open udp port matching the source/destination port? */
-		memcpy(m_memory + UIPR0, buffer + 58, 4); 
-		memcpy(m_memory + UPORT0, buffer + 64, 2);
-		m_memory[IR] | IR_UNREACH;
-		update_ethernet_irq();
-		return;
-	}
-
-
-	// respond to ICMP ping
-	if (is_icmp && is_unicast && (m_memory[MR] & MR_PB) == 0 && buffer[0x22] == ICMP_ECHO_REQUEST)
-	{
-		handle_ping_reply(buffer, length);
-		return;
-	}
 
 }
 
@@ -1178,11 +1275,8 @@ void w5100_device::receive(int sn, const uint8_t *buffer, int length)
 			offset = 0x22;
 			length -= offset;
 
-			// header: { uint32_t dest_ip, uint16_t size }
-			header[0] = buffer[0x1e];
-			header[1] = buffer[0x1f];
-			header[2] = buffer[0x20];
-			header[3] = buffer[0x21];
+			// header: { uint32_t foreign_ip, uint16_t size }
+			memcpy(header + 0, buffer + o_IP_SRC_ADDRESS, 4);
 
 			header[4] = length >> 8;
 			header[5] = length;
@@ -1194,14 +1288,9 @@ void w5100_device::receive(int sn, const uint8_t *buffer, int length)
 			offset = 0x30;
 			length -= offset;
 
-			// header { uint32_t dest_ip, uint16_t dest_port, uint16_t size }
-			header[0] = buffer[0x1e];
-			header[1] = buffer[0x1f];
-			header[2] = buffer[0x20];
-			header[3] = buffer[0x21];
-
-			header[4] = buffer[0x24];
-			header[5] = buffer[0x25];
+			// header { uint32_t foreign_ip, uint16_t foreign_port, uint16_t size }
+			memcpy(header + 0, buffer + o_IP_SRC_ADDRESS, 4);
+			memcpy(header + 4, buffer + o_UDP_SRC_PORT, 2);
 
 			header[6] = length >> 8;
 			header[7] = length;
@@ -1318,7 +1407,7 @@ bool w5100_device::find_mac(int sn)
 	int rtr = (m_memory[RTR0] << 8) | m_memory[RTR1];
 	if (!rtr) rtr = 0x2000;
 	attotime tm = attotime::from_usec(rtr * 100);
-	m_timers[sn].adjust(tm, 0, tm);
+	m_timers[sn]->adjust(tm, 0, tm);
 
 	send_arp_request(dest);
 	return false;
@@ -1334,7 +1423,7 @@ void w5100_device::handle_arp_reply(uint8_t *buffer, int length)
 	/* if another device claims our MAC address, need to generate a CONFLICT interrupt */
 	/* TODO - comparing IP is not correct when it's a gateway lookup */
 
-	uint32_t ip = read32(buffer + 0x1c);
+	uint32_t ip = read32(buffer + o_ARP_SPA);
 
 	LOGMASKED(LOG_ARP, "Received ARP reply for %d.%d.%d.%d\n",
 		(ip >> 24) & 0xff, (ip >> 16) & 0xff,
@@ -1350,7 +1439,7 @@ void w5100_device::handle_arp_reply(uint8_t *buffer, int length)
 		{
 			if (m_sockets[sn].arp_ip_address == ip)
 			{
-				memcpy(socket + Sn_DHAR0, buffer + 0x16, 6);
+				memcpy(socket + Sn_DHAR0, buffer + o_ARP_SHA, 6);
 				m_sockets[sn].arp_ok = true;
 				m_timers[sn]->reset();
 				switch(proto)
@@ -1377,7 +1466,7 @@ void w5100_device::handle_arp_request(uint8_t *buffer, int length)
 {
 	/* reply to (broadcast) request for our mac address */
 
-	if (length < 42 || memcmp(buffer + 39, &m_memory[SIPR0], 4)) return;
+	if (length < 42 || memcmp(buffer + o_ARP_TPA, m_memory + SIPR0, 4)) return;
 
 	static const int MESSAGE_SIZE = 42;
 	uint8_t message[MESSAGE_SIZE];
@@ -1389,14 +1478,14 @@ void w5100_device::handle_arp_request(uint8_t *buffer, int length)
 	message[12] = ETHERTYPE_ARP >> 8;
 	message[13] = ETHERTYPE_ARP;
 
-	message[14] = 1 >> 8; // hardware type = ethernet
-	message[15] = 1;
+	message[14] = ARP_HARDWARE_ETHERNET >> 8; // hardware type = ethernet
+	message[15] = ARP_HARDWARE_ETHERNET;
 	message[16] = ETHERTYPE_IP >> 8;
 	message[17] = ETHERTYPE_IP;
 	message[18] = 6; // hardware size
 	message[19] = 4; // protocol size
-	message[20] = ARP_REPLY >> 8;
-	message[21] = ARP_REPLY;
+	message[20] = ARP_OP_REPLY >> 8;
+	message[21] = ARP_OP_REPLY;
 	memcpy(message + 22, &m_memory[SHAR0], 6); //sender mac
 	memcpy(message + 28, &m_memory[SIPR0], 4); // sender ip
 	memcpy(message + 32, buffer + 22, 10); // dest mac + ip.
@@ -1418,14 +1507,14 @@ void w5100_device::send_arp_request(uint32_t ip)
 	message[12] = ETHERTYPE_ARP >> 8;
 	message[13] = ETHERTYPE_ARP;
 
-	message[14] = 1 >> 8; // hardware type = ethernet
-	message[15] = 1;
+	message[14] = ARP_HARDWARE_ETHERNET >> 8; // hardware type = ethernet
+	message[15] = ARP_HARDWARE_ETHERNET;
 	message[16] = ETHERTYPE_IP >> 8;
 	message[17] = ETHERTYPE_IP;
 	message[18] = 6; // hardware size
 	message[19] = 4; // protocol size
-	message[20] = ARP_REQUEST >> 8;
-	message[21] = ARP_REQUEST;
+	message[20] = ARP_OP_REQUEST >> 8;
+	message[21] = ARP_OP_REQUEST;
 	memcpy(message + 22, &m_memory[SHAR0], 6); //sender mac
 	memcpy(message + 28, &m_memory[SIPR0], 4); // sender ip
 	memset(message + 32, 0, 6); // target mac
@@ -1440,7 +1529,6 @@ void w5100_device::send_arp_request(uint32_t ip)
 		(ip >> 8) & 0xff, (ip >> 0) & 0xff
 	);
 	send(message, MESSAGE_SIZE);
-
 }
 
 
