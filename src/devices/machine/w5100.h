@@ -66,7 +66,9 @@ private:
 	void build_ethernet_header(int sn, uint8_t *buffer, int length);
 	void build_ipraw_header(int sn, uint8_t *buffer, int length);
 	void build_udp_header(int sn, uint8_t *buffer, int length);
-	// void build_tcp_header(int sn, uint8_t *buffer, int length);
+	void build_tcp_header(int sn, uint8_t *buffer, int length, int flags);
+
+	void send_tcp_packet(int sn, int flags);
 
 	void dump_bytes(const uint8_t *buffer, int length);
 
