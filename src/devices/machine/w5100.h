@@ -81,6 +81,24 @@ private:
 
 	devcb_write_line m_irq_handler;
 
+	struct tcp_block
+	{
+		uint32_t snd_una; // oldest unack seq number
+		uint32_t snd_nxt; // next seq number to send
+		uint32_t snd_wnd; // send window
+		uint32_t snd_up; // send urgent pointer
+		uint32_t wl1; // seg seq of last window update
+		uint32_t wl2; // seg ack of last window update
+		uint32_t iss; // initial send seq
+
+		uint32_t rcv_nxt; // receive next
+		uint32_t rcv_wnd; // receive window
+		uint32_t rcv_up; // receive urgent ptr
+		uint32_t irs; // initial recv seq number
+	};
+
+	struct tcp_block m_tcp[4];
+
 	struct socket_info
 	{
 		int rx_buffer_offset;
@@ -88,9 +106,23 @@ private:
 		int tx_buffer_offset;
 		int tx_buffer_size;
 
+		// arp
 		uint32_t arp_ip_address;
 		bool arp_ok;
+
+		// arp/tcp retry count
 		int retry;
+
+
+		uint32_t tcp_send_una;
+		uint32_t tcp_send_wnd;
+		uint32_t tcp_send_nxt;
+		uint32_t tcp_send_max;
+
+		uint32_t tcp_recv_wnd;
+		uint32_t tcp_rcv_next;
+		uint32_t tcp_rcv_adv;
+
 
 		void reset()
 		{

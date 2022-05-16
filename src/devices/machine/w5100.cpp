@@ -6,11 +6,12 @@
   WIZnet W5100
 
   Based on:
-  W5100. W5100S, W5200, W5500 datasheets
+  W5100, W5100S, W5200, W5500 datasheets
   WIZnet ioLibrary Driver (https://github.com/Wiznet/ioLibrary_Driver)
   https://docs.wiznet.io/Product/iEthernet/W5100/
   Uthernet II User's and Programmer's Manual
 
+  RFC 793: TCP Functional Specification
   TCP/IP Illustrated, Volume 1: The Protocols
   TCP/IP Illustrated, Volume 2: The Implementation
 
@@ -75,6 +76,7 @@ enum {
 	SIPR2,
 	SIPR3,
 	/* 0x13-0x14 reserved */
+	// INTPTMR0, INTPTMR1 on W5100S
 	IR = 0x15,
 	IMR,
 	RTR0,
@@ -82,9 +84,11 @@ enum {
 	RCR,
 	RMSR,
 	TMSR,
-	PATR0,
+	PATR0, // w5100 only
 	PATR1,
 	/* 0x1e-0x27 reserved */
+	// 0x20 = IR2 w5100s
+	// 0x21 = IMR2 w5100s only
 	PTIMER = 0x28,
 	PMAGIC,
 	UIPR0,
@@ -94,6 +98,12 @@ enum {
 	UPORT0,
 	UPORT1,
 	/* 0x30-0x3ff reserved */
+	// 0x30 = MR2 w5100s
+	// 0x31 = reserved
+	// 0x32-0x37 = PHAR0-5
+	// 0x38-0x39 = PSIDR0
+	// 0x3a-0x3b = PMRU0/1
+	//0x3c = PHYSR0
 };
 
 /* Socket Registers */
@@ -256,6 +266,11 @@ enum {
 };
 
 enum {
+	o_IP_IHL = 14, // version + header length
+	o_IP_TOS = 15,
+	o_IP_LENGTH = 16,
+	o_IP_IDENTIFICATION = 18,
+	o_IP_FLAGS = 20, // flags + fragment
 	o_IP_TTL = 22,
 	o_IP_PROTOCOL = 23,
 	o_IP_CHECKSUM = 24,
@@ -906,7 +921,8 @@ void w5100_device::socket_open(int sn)
 	{
 		case Sn_MR_TCP:
 			sr = Sn_SR_INIT;
-			m_sockets[sn].tcp_sequence = machine().time().attotime() & 0xffffffff;
+			m_tcp[sn].reset();
+			m_tcp[sn].snd_iss = machine().time().attotime() & 0xffffffff;
 			break;
 		case Sn_MR_UDP:
 			/* TODO -- if multicast bit is set, generate IGMP register message */
@@ -1087,6 +1103,14 @@ void w5100_device::socket_send(int sn)
 
 	// for TCP, break up large packets, don't set SEND_OK until all are acked.
 
+	if (proto == Sn_MR_TCP)
+	{
+		/* split up based on snd_win and mss */
+
+
+
+	}
+
 }
 
 void w5100_device::socket_send_mac(int sock)
@@ -1097,6 +1121,8 @@ void w5100_device::socket_send_mac(int sock)
 void w5100_device::socket_send_keep(int sn)
 {
 	// TCP keep-alive is handled as an ACK of the most previously acked message.
+	// TODO -- does this enable keep-alive to be occasionally sent
+	// or does it send 1 keep-alive message?
 }
 
 void w5100_device::socket_connect(int sn)
@@ -1114,6 +1140,8 @@ void w5100_device::socket_connect(int sn)
 	socket[Sn_PORT0] = port << 8;
 	socket[Sn_PORT1] = port;
 
+	m_tcp[sn].snd_una = m_tcp[sn].snd_iss; 
+	m_tcp[sn].snd_nxt = m_tcp[sn].snd_iss + 1;
 
 
 	send_tcp_packet(sn, TCP_SYN);
@@ -1799,77 +1827,127 @@ void w5100_device::handle_ping_reply(uint8_t *buffer, int length)
 }
 
 
-void w5100_device::send_tcp_packet(int sn, int flags)
+struct tcp_info
+{
+	uint32_t seq;
+	uint32_t ack;
+
+	uint8_t dhar[6];
+	uint8_t dip[4];
+	uint16_t dport;
+	uint16_t port;
+	uint16_t window;
+
+
+	uint8_t tos;
+	uint8_t ttl;
+	uint8_t flags;
+};
+
+/* send a response (ACK and/or RST) */
+/* ip address, port, MAC, taken from TCP/IP message in buffer */
+void w5100_device::send_tcp_packet(const uint8_t *buffer, int flags, uint32_t seq, uint32_t ack)
 {
 	static const int MESSAGE_SIZE = 54;
 	uint8_t message[MESSAGE_SIZE];
 
-	build_tcp_header(sn, message, sizeof(message), flags);
+	struct tcp_info ti{};
+
+	memcpy(ti.dhar, buffer + o_ETHERNET_SRC, 6);
+	memcpy(ti.dip, buffer + o_IP_SRC_ADDRESS, 4);
+	ti.dport = read16(buffer + o_TCP_SRC_PORT);
+	ti.port = read16(buffer + o_TCP_DEST_PORT);
+	ti.window = 0;
+	ti.seq = seq;
+	ti.ack = ack;
+	ti.tos = 0;
+	ti.ttl = 0x80;
+	ti.flags = flags;
+
+	build_tcp_header(message, sizeof(message), ti);
+	send(message, sizeof(message));
+}
+
+void w5100_device::send_tcp_packet(int sn, int flags, uint32_t seq, uint32_t ack)
+{
+	static const int MESSAGE_SIZE = 54;
+	uint8_t message[MESSAGE_SIZE];
+
+	build_tcp_header(sn, message, sizeof(message), flags, seq, ack);
 	send(message, sizeof(message));
 	// set timer?
 }
 
 
-void w5100_device::build_tcp_header(int sn, uint8_t *buffer, int length, int flags)
+void w5100_device::build_tcp_header(int sn, uint8_t *buffer, int length, int flags, uint32_t seq, uint32_t ack)
 {
 	uint8_t *socket = m_memory + Sn_BASE + Sn_SIZE * sn;
 
+	struct tcp_info ti{};
+	ti.seq = seq;
+	ti.ack = ack;
+	ti.flags = flags;
 
-	int window = (m_sockets[sn].tx_buffer_size -  read16(socket + Sn_RX_RSR0));
+	ti.window = (m_sockets[sn].tx_buffer_size -  read16(socket + Sn_RX_RSR0));
+	ti.ttl = socket[Sn_TTL];
+	ti.tos = socket[Sn_TOS];
+	ti.port = read16(socket + Sn_PORT0);
+	ti.dport = read16(socket + Sn_DPORT0);
+	memcpy(ti.dip, socket + Sn_DIPR0, 4);
+	memcpy(ti.dhar, socket + Sn_DHAR0, 6);
 
-	uint32_t seq = m_sockets[sn].tcp_sequence;
-	uint32_t ack = m_sockets[sn].tcp_ack;
+	build_tcp_header(buffer, length, ti);
+}
 
-	memcpy(buffer + 0, socket + Sn_DHAR0, 6);
-	memcpy(buffer + 6, SHAR0, 6);
+void w5100_device::build_tcp_header(uint8_t *buffer, int length, const struct tcp_info &ti)
+{
+	memcpy(buffer + 0, ti.dhar, 6);
+	memcpy(buffer + 6, m_memory + SHAR0, 6);
 	buffer[12] = ETHERTYPE_IP >> 8;
 	buffer[13] = ETHERTYPE_IP;
 
 	length -= 14;
 	++m_identification;
 
-	// syn and fin use a sequence #
-	// if (flags & (TCP_SYN | TCP_FIN))
-	// 	++m_sockets[sn].tcp_sequence;
 
 	buffer[14] = 0x45; // IPv4, length = 5*4
-	buffer[15] = socket[Sn_TOS];
+	buffer[15] = ti.tos;
 	buffer[16] = length >> 8; // total length
 	buffer[17] = length;
 	buffer[18] = m_identification >> 8; // identification
 	buffer[19] = m_identification;
 	buffer[20] = 0x40; // flags - don't fragment
 	buffer[21] = 0x00;
-	buffer[22] = socket[Sn_TTL];
+	buffer[22] = ti.ttl;
 	buffer[23] = IP_TCP;
 	buffer[24] = 0; // checksum...
 	buffer[25] = 0;
 	memcpy(buffer + 26, m_memory + SIPR0, 4); // source ip
-	memcpy(buffer + 30, socket + Sn_DIPR0, 4); // destination ip
+	memcpy(buffer + 30, ti.dip, 4); // destination ip
 
 	length -= 20;
 
 	// tcp header
-	buffer[34] = socket[Sn_PORT0]; // source port
-	buffer[35] = socket[Sn_PORT1];
-	buffer[36] = socket[Sn_DPORT0]; // dest port
-	buffer[37] = socket[Sn_DPORT0];
+	buffer[34] = ti.port >> 8 // source port
+	buffer[35] = ti.port;
+	buffer[36] = ti.dport >> 8; // dest port
+	buffer[37] = ti.dport;
 
-	buffer[38] = (seq >> 24) & 0xff;
-	buffer[39] = (seq >> 16) & 0xff;
-	buffer[40] = (seq >> 8) & 0xff;
-	buffer[41] = (seq >> 0) & 0xff;
+	buffer[38] = (ti.seq >> 24) & 0xff;
+	buffer[39] = (ti.seq >> 16) & 0xff;
+	buffer[40] = (ti.seq >> 8) & 0xff;
+	buffer[41] = (ti.seq >> 0) & 0xff;
 
-	buffer[42] = (ack >> 24) & 0xff;
-	buffer[43] = (ack >> 16) & 0xff;
-	buffer[44] = (ack >> 8) & 0xff;
-	buffer[45] = (ack >> 0) & 0xff;
+	buffer[42] = (ti.ack >> 24) & 0xff;
+	buffer[43] = (ti.ack >> 16) & 0xff;
+	buffer[44] = (ti.ack >> 8) & 0xff;
+	buffer[45] = (ti.ack >> 0) & 0xff;
 
 	buffer[46] = 0x50; // header = 4 * 5 bytes
-	buffer[47] = flags;
+	buffer[47] = ti.flags;
 
-	buffer[48] = window >> 8; // window size
-	buffer[49] = window;
+	buffer[48] = ti.window >> 8; // window size
+	buffer[49] = ti.window;
 
 	buffer[50] = 0; // checksum
 	buffer[51] = 0;
@@ -1887,7 +1965,7 @@ void w5100_device::build_tcp_header(int sn, uint8_t *buffer, int length, int fla
 
 	// ip pseudo header.
 	cc.append(m_memory + SIPR0, 4); // source ip
-	cc.append(socket + Sn_DIPR0, 4); // dest ip
+	cc.append(ti.dip, 4); // dest ip
 	cc.append(static_cast<uint16_t>(IP_TCP));
 	cc.append(static_cast<uint16_t>(length + 20));
 	cc.append(buffer + 34, length)
@@ -1899,35 +1977,98 @@ void w5100_device::build_tcp_header(int sn, uint8_t *buffer, int length, int fla
 }
 
 
+
+
+// a <= b <= c
+inline static bool ack_valid_le_le(uint32_t a, uint32_t b, uint32_t c)
+{
+	if (a <= c) return (a <= b) && (b <= c);
+	return (a <= b) || (b <= c);
+}
+
+// a <= b < c
+inline static bool ack_valid_le_lt(uint32_t a, uint32_t b, uint32_t c)
+{
+	if (a < c) return (a <= b) && (b < c);
+	return (a <= b) || (b < c);
+
+}
+
+// a < b <= c
+inline static bool ack_valid_lt_le(uint32_t a, uint32_t b, uint32_t c)
+{
+	if (a < c) return (a < b) && (b <= c);
+	return (a < b) || (b <= c);
+}
+
+
 bool w5100_device::tcp_receive(int sn, const uint8_t *buffer, int length)
 {
-	uint8_t *socket = m_memory + Sn_BASE + sn * Sn_SIZE;
 
-	uint8_t &sr = socket[Sn_SR];
+
+	uint32_t seg_seq = 0;
+	uint32_t seg_ack = 0;
+	uint32_t seg_len = 0;
+	uint32_t seg_wnd = 0;
+	uint32_t seg_up = 0;
+	// uint32_t seg_prc = 0; // precedence; was in ip tos field
+
+	/* SYN packets may contain data; it will be ignored (RFC 4987 - TCP SYN Flooding Attacks and Common Mitigations) */
+
+
 
 	int flags = buffer[o_TCP_FLAGS];
 
+
+	seg_seq = read32(buffer + o_TCP_SEQ_NUMBER);
+	seg_ack = read32(buffer + o_TCP_ACK_NUMBER);
+	seg_len = read16(buffer + o_IP_LENGTH - tcp header - ip header);
+	seg_wnd = read16(buffer + o_TCP_WINDOW_SIZE); // window scaling not yet supported.
+	seg_up = read16(buffer + o_TCP_URGENT);
+
 	flags = flags & ~(TCP_SYN|TCP_ACK|TCP_FIN|TCP_RST);
 
-	if (sr == Sn_SR_LISTEN && flags == TCP_SYN)
+	if (sn < 0)
 	{
-		memcpy(socket + Sn_DIPR0, buffer + o_IP_SRC_ADDRESS, 4);
-		memcpy(socket + Sn_DPORT0, buffer + o_TCP_SRC_PORT, 2);
+		// rfc 793, page 65
+		// discard the packet ; send RST unless this is an RST
+		if (flags & TCP_RST) return;
 
-		m_sockets[sn].tcp_ack = read32(buffer + o_TCP_SEQ_NUMBER) + 1;
-
-		send_tcp_packet(sn, TCP_SYN|TCP_ACK);
-		sr = Sn_SR_SYNRECV;
-		// todo - timer.
-		return true;
+		// if (flags & (TCP_SYN|TCP_FIN)) seg_len++;
+		// linux sends RST|ACK w/ 00, seq + 1 for SYN to closed port....
+		if (flags & ACK)
+			send_tcp_segment(buffer, TCP_RST | TCP_ACK, 0, seg_seq + seg_len);
+		else
+			send_tcp_segment(buffer, TCP_RST, seg_ack, 0);
+		return;
 	}
 
-	if (memcmp(socket + Sn_DPORT0, buffer + o_TCP_SRC_PORT, 2)) return false;
-	if (memcmp(socket + Sn_DIPR0, buffer + o_IP_SRC_ADDRESS, 4)) return false;
+	uint8_t *socket = m_memory + Sn_BASE + sn * Sn_SIZE;
+	uint8_t &sr = socket[Sn_SR];
+
+
+	// if tuple doesn't match, RST it.
+	// but this doesn't apply if listening....
+	if (sr != Sn_SR_LISTEN)
+	{
+		if (memcmp(socket + Sn_DPORT0, buffer + o_TCP_SRC_PORT, 2) || memcmp(socket + Sn_DIPR0, buffer + o_IP_SRC_ADDRESS, 4))
+		{
+			if (flags & TCP_RST) return;
+
+			if (flags & ACK)
+				send_tcp_segment(buffer, TCP_RST | TCP_ACK, 0, seg_seq + seg_len);
+			else
+				send_tcp_segment(buffer, TCP_RST, seg_ack, 0);
+			return;
+		}
+	}
+
+
 
 	// compare ack, seq, etc...
 
 	// handle RST first
+	// but RST w/ invalid ack is probably malicious or for an old connection.
 	if (flags & TCP_RST)
 	{
 		sr = Sn_SR_CLOSED;
@@ -1938,29 +2079,147 @@ bool w5100_device::tcp_receive(int sn, const uint8_t *buffer, int length)
 	}
 
 
-	if (flags & TCP_ACK)
-	{
-		/* verify ACK is valid */
-		/* if this acknowledges sent data, update Sn_TX_FSR and possibly generate SEND_OK interrupt */
-	}
 
 
 	switch(sr)
 	{
-		case Sn_SR_SYNSENT:
-			if (flags == (TCP_SYN | TCP_ACK))
+		case Sn_SR_LISTEN:
+			// 793, page 65/66
+			if (flags & TCP_ACK)
 			{
-				m_timers[sn]->reset();
-				m_sockets[sn].tcp_ack++;
-				send_tcp_packet(TCP_ACK);
+				send_tcp_packet(buffer, TCP_RST, seg_ack, 0);
+			}
+			else if (flags == TCP_SYN)
+			{
+				memcpy(socket + Sn_DIPR0, buffer + o_IP_SRC_ADDRESS, 4);
+				memcpy(socket + Sn_DPORT0, buffer + o_TCP_SRC_PORT, 2);
+				memcpy(socket + Sn_DHAR0, buffer + o_ETHERNET_SRC, 6);
+
+
+				m_tcp[sn].irs = seg_seq;
+				m_tcp[sn].rcv_nxt = seg_seq + 1;
+
+				send_tcp_packet(sn, TCP_SYN | TCP_ACK, m_tcp[sn].iss, m_tcp[sn].rcv_nxt);
+
+				m_tcp[sn].snd_nxt = m_tcp[sn].iss + 1;
+				m_tcp[sn].snd_una = m_tcp[sn].iss;
+
+				sr = Sn_SR_SYNRECV;
+				// n.b data in the segment is dropped.
+			}
+
+			break;
+
+		case Sn_SR_SYNSENT:
+			// page 66/67
+			if (flags & TCP_ACK)
+			{
+				// if seg_ack <= iss || seg_ack > snd_next, reset
+				if (!ack_valid_lt_le(iss, seg_ack, snd_next))
+				{
+					if (!flags & TCP_RST)
+						send_tcp_packet(sn, TCP_RST, seg_ack, 0);
+					return;
+				}
+				ack_ok = ack_valid_le_le(snd_una, seg_ack, snd_next);
+				if (!ack_ok) return;
+			}
+
+			if (flags & TCP_RST)
+			{
+				// if ack is valid, close the connection.
+				// otherwise, drop it.
+				if (ack_ok)
+				{
+					sr = Sn_SR_CLOSED;
+					socket[sn_IR] |= Sn_IR_DISCON;
+					update_ethernet_irq();
+				}
+				return;
+			}
+
+			// TCP model allows SYN w/o ACK (which transitions to SYN-RECV)
+			if (flags == TCP_SYN | TCP_ACK)
+			{
+				m_tcp[sn].rcv_next = seg_seq + 1;
+				m_tcp[sn].irs = seg_seq;
+				m_tcp[sn].snd_una = seg_ack;
 
 				sr = Sn_SR_ESTABLISHED;
+				send_tcp_packet(sn, TCP_ACK, snd_nxt, rcv_nxt);
 				socket[Sn_IR] |= Sn_IR_CON;
 				update_ethernet_irq();
-
-				return true;
 			}
+
 			break;
+
+		case Sn_SR_SYNRECV:
+		case Sn_SR_ESTABLISHED:
+		case Sn_SR_CLOSE_WAIT:
+		case Sn_SR_LAST_ACK:
+		case Sn_SR_TIME_WAIT:
+		case Sn_SR_FIN_WAIT:
+			if (flags & TCP_RST)
+			{
+				sr = Sn_SR_CLOSED;
+				socket[sn_IR] |= Sn_IR_DISCON;
+				update_ethernet_irq();
+				return;
+			}
+
+			if (seg_len == 0 && m_tcp[sn].rcv_wnd == 0)
+				ok = seg_seq == m_tcp[sn].rcv_nxt;
+			else if (seg_len == 0 && m_tcp[sn].rcv_wnd > 0)
+				ok = (rcv_nxt <= seg_seq && seg_seq < rcv_nxt + rcv_wnd);
+			else if (seg_len > 0 && rcv_wnd == 0)
+				ok = false;
+			else
+				ok = rcv_nxt <= seg_seq && seg_seq < rcv_nxt + rcv_wnd;
+				ok |= rcv_nxt <= seg_seq + seg_len - 1 && seg_seq + seg_len < rcv_nxt + rcv_wnd;
+			if (!ok)
+			{
+				send_tcp_packet(sn, TCP_ACK, snd_nxt, rcv_nxt);
+				return;
+			}
+
+			if (flags & TCP_SYN)
+			{
+				// if SYN is in the window, RST and close  --- ???????
+
+			}
+			if (!flags & TCP_ACK)
+				return;
+			if (sr == Sn_SR_SYNRECV)
+			{
+				if (snd_una <= seg_ack && seg_ack <= snd_next)
+					sr = Sn_SR_ESTABLISHED;
+				else
+				{
+					send_tcp_packet(sn, TCP_RST, seg_ack, 0);
+					return;
+				}
+			}
+			if (sr == Sn_SR_ESTABLISHED || sr == Sn_SR_FIN_WAIT || sr == Sn_SR_CLOSE_WAIT)
+			{
+				if (seg_ack < snd_una) return; // duplicate -- ignore
+				if (seg_ack > snd_next)
+				{
+					// send an ack, drop the segment, return.
+					return;
+				}
+				if (snd_una < seg_ack && seg_ack <= snd_nxt)
+				{
+					snd_una = seg_ack;
+					// update FSR
+					// possibly send another data segment
+					// possibly generate SEND_OK interrupt
+
+					// TODO -- update send window...
+
+				}
+
+			}
+
 
 		case Sn_SR_SYNRECV:
 			if (flags == TCP_ACK)
