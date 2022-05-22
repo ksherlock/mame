@@ -2,32 +2,48 @@
 #ifndef MAME_MACHINE_W5100_H
 #define MAME_MACHINE_W5100_H
 
+#include "machine/tcpip.h"
+
 
 
 class w5100_device : public device_t, public device_network_interface
 {
 public:
 
-	w5100_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
 	uint8_t read(uint16_t address);
 	void write(uint16_t address, uint8_t data);
 
 	auto irq_handler() { return m_irq_handler.bind(); }
 
+	w5100_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
+
 protected:
 
-	w5100_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock);
+	enum class dev_type {
+		W5100,
+		W5100S
+	};
+
+	//w5100_device_base(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
+
+	w5100_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, dev_type device_type);
 
 	virtual void device_start() override;
 	virtual void device_reset() override;
+	virtual void device_add_mconfig(machine_config &config) override;
+
 	virtual void device_timer(emu_timer &timer, device_timer_id id, int param) override;
 	virtual void device_post_load() override;
+
+
 
 	virtual void recv_cb(u8 *buffer, int length) override;
 	// virtual void send_complete_cb(int result) override;
 	// virtual int recv_start_cb(u8 *buf, int length) override;
 	// virtual void recv_complete_cb(int result) override;
+
+	const dev_type m_device_type;
 
 private:
 
@@ -48,10 +64,8 @@ private:
 	void socket_disconnect(int sn);
 
 
-#if 0
-	void get_rmsr(int sn, int &offset, int &size) const;
-	void get_tmsr(int sn, int &offset, int &size) const;
-#endif
+	uint16_t allocate_port(int proto);
+
 
 	bool find_mac(int sn);
 	void send_arp_request(uint32_t ip);
@@ -66,38 +80,24 @@ private:
 	void build_ethernet_header(int sn, uint8_t *buffer, int length);
 	void build_ipraw_header(int sn, uint8_t *buffer, int length);
 	void build_udp_header(int sn, uint8_t *buffer, int length);
-	void build_tcp_header(int sn, uint8_t *buffer, int length, int flags);
 
-	void send_tcp_packet(int sn, int flags);
+	void tcp_state_change(int sn, tcpip_device::tcp_state new_state, tcpip_device::tcp_state old_state);
 
 	void dump_bytes(const uint8_t *buffer, int length);
 
 	uint16_t m_idm = 0;
 	uint16_t m_identification = 0;
-	uint8_t m_irq_state = 0;
-	emu_timer *m_timers[4]{};
+	uint32_t m_irq_state = 0;
+
+	required_device_array<tcpip_device, 5> m_tcp;
+	devcb_write_line m_irq_handler;
+
+	emu_timer *m_timers[5]{};
 
 	uint8_t m_memory[0x8000]{};
 
-	devcb_write_line m_irq_handler;
 
-	struct tcp_block
-	{
-		uint32_t snd_una; // oldest unack seq number
-		uint32_t snd_nxt; // next seq number to send
-		uint32_t snd_wnd; // send window
-		uint32_t snd_up; // send urgent pointer
-		uint32_t wl1; // seg seq of last window update
-		uint32_t wl2; // seg ack of last window update
-		uint32_t iss; // initial send seq
-
-		uint32_t rcv_nxt; // receive next
-		uint32_t rcv_wnd; // receive window
-		uint32_t rcv_up; // receive urgent ptr
-		uint32_t irs; // initial recv seq number
-	};
-
-	struct tcp_block m_tcp[4];
+	//struct socket_info *m_socket_info = nullptr;
 
 	struct socket_info
 	{
@@ -106,37 +106,34 @@ private:
 		int tx_buffer_offset;
 		int tx_buffer_size;
 
-		// arp
-		uint32_t arp_ip_address;
-		bool arp_ok;
-
 		// arp/tcp retry count
 		int retry;
 
+		// arp variables.
+		uint32_t arp_ip_address;
+		bool arp_ok;
 
-		uint32_t tcp_send_una;
-		uint32_t tcp_send_wnd;
-		uint32_t tcp_send_nxt;
-		uint32_t tcp_send_max;
-
-		uint32_t tcp_recv_wnd;
-		uint32_t tcp_rcv_next;
-		uint32_t tcp_rcv_adv;
-
-
-		void reset()
-		{
-			arp_ok = false;
-			arp_ip_address = 0;
+		void reset() {
 			retry = 0;
+			arp_ip_address = 0;
+			arp_ok = false;
 		}
 	};
 
-	socket_info m_sockets[4];
+	socket_info m_sockets[5];
 
 
 };
 
+
+class w5100s_device : public w5100_device
+{
+public:
+	w5100s_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
+};
+
+
 DECLARE_DEVICE_TYPE(W5100, w5100_device)
+DECLARE_DEVICE_TYPE(W5100S, w5100s_device)
 
 #endif

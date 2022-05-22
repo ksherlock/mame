@@ -4965,6 +4965,8 @@ end
 
 if (MACHINES["W5100"]~=null) then
 	files {
+		MAME_DIR .. "src/devices/machine/tcpip.cpp",
+		MAME_DIR .. "src/devices/machine/tcpip.h",
 		MAME_DIR .. "src/devices/machine/w5100.cpp",
 		MAME_DIR .. "src/devices/machine/w5100.h",
 	}

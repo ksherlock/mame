@@ -28,7 +28,6 @@
 
 /*
 TODO:
-- checksum for icmp/udp/tcp/ip packets
 - UDP multicast - igmp messages
 - TCP
 - ICMP unreachable port
@@ -49,11 +48,6 @@ TODO:
 #define VERBOSE (LOG_GENERAL|LOG_COMMAND|LOG_FILTER|LOG_PACKETS|LOG_ARP|LOG_TCP)
 #include "logmacro.h"
 
-
-enum {
-	model_w5100,
-	model_w5100s
-};
 
 /* indirect mode addresses */
 enum {
@@ -84,20 +78,21 @@ enum {
 	SIPR1,
 	SIPR2,
 	SIPR3,
-	/* 0x13-0x14 reserved */
-	// INTPTMR0, INTPTMR1 on W5100S
-	IR = 0x15,
-	IMR,
+	INTPTMR0, // w5100s only
+	INTPTMR1, // w5100s only
+	IR,
+	IMR = 0x16,
 	RTR0,
 	RTR1,
 	RCR,
 	RMSR,
 	TMSR,
 	PATR0, // w5100 only
-	PATR1,
-	/* 0x1e-0x27 reserved */
-	// 0x20 = IR2 w5100s
-	// 0x21 = IMR2 w5100s only
+	PATR1, // w5100 only
+	/* 0x1c-0x1f reserved */
+	IR2 = 0x20, // w5100s only
+	IMR2, // w5100s only
+	/* 0x22-0x27 reserved */
 	PTIMER = 0x28,
 	PMAGIC,
 	UIPR0,
@@ -106,13 +101,65 @@ enum {
 	UIPR3,
 	UPORT0,
 	UPORT1,
-	/* 0x30-0x3ff reserved */
-	// 0x30 = MR2 w5100s
-	// 0x31 = reserved
-	// 0x32-0x37 = PHAR0-5
-	// 0x38-0x39 = PSIDR0
-	// 0x3a-0x3b = PMRU0/1
-	//0x3c = PHYSR0
+
+
+	/* 0x30+ are w5100s only */ 
+	MR2 = 0x30,
+	/* 0x31 reserved */
+	PHAR0 = 0x32,
+	PHAR1,
+	PHAR2,
+	PHAR3,
+	PHAR4,
+	PHAR5,
+	PSIDR0,
+	PSIDR1,
+	PMRUR0,
+	PMRUR1,
+	PHYSR0,
+	PHYSR1,
+	PHYAR,
+	PHYRAR,
+	PHYDIR0,
+	PHYDIR1,
+	PHYDOR0,
+	PHYDOR1,
+	PHYACR,
+	PHYDIVR,
+	PHYCR0,
+	PHYCR1,
+	/* 0x48-0x4b reserved */
+	SLCR = 0x4c,
+	SLRTR0,
+	SLRTR1,
+	SLRCR,
+	SLIPR0,
+	SLIPR1,
+	SLIPR2,
+	SLIPR3,
+	SLPHAR0,
+	SLPHAR1,
+	SLPHAR2,
+	SLPHAR3,
+	SLPHAR4,
+	SLPHAR5,
+	PINGSEQR0,
+	PINGSEQR1,
+	PINGIDR0,
+	PINGIDR1,
+	SLIMR,
+	SLIR,
+	/* 0x60-0x6a reserved */
+	CLKCKR = 0x70,
+	NETLCKR,
+	PHYLCKR,
+	/* 0x73-0x7f reserved */
+	VERR = 0x80,
+	/* 0x81 reserved */
+	TCNTR0 = 0x82,
+	TCNTR1,
+	/* 0x84-0x87 reserved */
+	TCNTCLR = 0x88
 };
 
 /* Socket Registers */
@@ -141,8 +188,8 @@ enum {
 	Sn_TOS,
 	Sn_TTL,
 	/* 0x17-0x1f reserved */
-	/* 0x1e is Sn_RX_BUF_SIZE on w5100s (RMSR) */
-	/* 0x1g is Sn_TX_BUF_SIZE on w5100s (TMSR) */
+	Sn_RX_BUF_SIZE = 0x1e, // w5100s only
+	Sn_TX_BUF_SIZE, // w5100s only
 	Sn_TX_FSR0 = 0x20,
 	Sn_TX_FSR1,
 	Sn_TX_RD0,
@@ -155,7 +202,18 @@ enum {
 	Sn_RX_RD1,
 	Sn_RX_WR0,
 	Sn_RX_WR1,
-	/* 0x042c-0x04ff reserved */
+
+	/* everything below w5100s only */
+	Sn_IMR,
+	Sn_FRAGR0,
+	Sn_FRAGR1,
+	Sn_MR2,
+	Sn_KPALVTR,
+	/* 0x31 reserved */
+	Sn_RTR0 = 0x32,
+	Sn_RTR1,
+	Sn_RCR,
+	/* 0x35-0xff reserved */
 
 };
 
@@ -168,11 +226,12 @@ enum {
 	MR_IND = 0x01
 };
 
+
 /* Interrupt Register bits */
 enum {
 	IR_CONFLICT = 0x80,
 	IR_UNREACH = 0x40,
-	IR_PPPoE = 0x20,
+	IR_PPPTERM = 0x20,
 	IR_S3_INT = 0x08,
 	IR_S2_INT = 0x04,
 	IR_S1_INT = 0x02,
@@ -239,6 +298,92 @@ enum {
 	Sn_IR_CON = 0x01,
 };
 
+/* w5100s below */
+
+/* Interrupt Register 2 */
+enum {
+	IR2_WOL = 0x01
+};
+
+/* Mode Register 2 bits */
+enum {
+	MR2_CLKSEL = 0x80,
+	MR2_IEN = 0x40,
+	MR2_NOTCPRST = 0x20,
+	MR2_UDPURB = 0x10,
+	MR2_WOL = 0x08,
+	MR2_FARP = 0x02,
+};
+
+/* PHY Status Register 0 */
+enum {
+	PHYSR0_CABOFF = 0x80,
+	PHYSR0_AUTO = 0x40,
+	PHYSR0_SPD = 0x20,
+	PHYSR0_DPX = 0x10,
+	PHYSR0_FDPX = 0x04,
+	PHYSR0_FSPD = 0x02,
+	PHYSR0_LINK = 0x01,
+};
+
+/* PHY Status Register 1 */
+enum {
+	PHYSR1_ACT = 0x80,
+	PHYSR1_RXP = 0x04,
+	PHYSR1_LPI = 0x02,
+	PHYSR1_CAL = 0x01,
+};
+
+/* PHY Register Address Register */
+enum {
+	PHYRAR_A4 = 0x10,
+	PHYRAR_A3 = 0x08,
+	PHYRAR_A2 = 0x04,
+	PHYRAR_A1 = 0x02,
+	PHYRAR_A0 = 0x01,
+};
+
+/* PHY Access Control Register */
+enum {
+	PHYACR_WRITE = 0x01,
+	PHYACR_READ = 0x03,
+};
+
+/* PHY Control Register 0 */
+enum {
+	PHYCR0_MODE2 = 0x04,
+	PHYCR0_MODE1 = 0x02,
+	PHYCR0_MODE0 = 0x01,
+};
+
+/* PHY Control Register 1 */
+enum {
+	PHYCR1_WOL = 0x80,
+	PHYCR1_PWDN = 0x20,
+	PHYCR1_RST = 0x01,
+};
+
+/* Socket-less Command Register */
+enum {
+	SLCR_ARP = 0x02,
+	SLCR_PING = 0x01,
+};
+
+/* Socket-less Interrupt Register */
+enum {
+	SLIR_TIMEOUT = 0x04,
+	SLIR_ARP = 0x02,
+	SLIR_PING = 0x01,
+};
+
+/* Socket Mode Register 2 */
+enum {
+	Sn_MR2_MBBLK = 0x40,
+	Sn_MR2_MMBLK = 0x20,
+	Sn_MR2_IPV6BLK = 0x10,
+	Sn_MR2_BRDB = 0x02, // TCP - force PSH
+	Sn_MR2_UNIB = 0x01,
+};
 
 enum {
 	Sn_BASE = 0x0400,
@@ -248,10 +393,12 @@ enum {
 };
 
 
+
 /* MISC IP, ARP, etc constants */
 enum {
 	ETHERTYPE_IP = 0x0800,
 	ETHERTYPE_ARP = 0x0806,
+	ETHERTYPE_IPV6 = 0x86dd,
 
 	ARP_OP_REQUEST = 0x01, // rfc 826
 	ARP_OP_REPLY = 0x02,
@@ -332,7 +479,7 @@ enum {
 
 
 enum {
-	// offsets.  assymes 4-byte PLEN, 6-byte HLEN
+	// offsets.  assumes 4-byte PLEN, 6-byte HLEN
 	o_ARP_HTYPE = 0,
 	o_ARP_PTYPE = 2,
 	o_ARP_HLEN = 4,
@@ -343,144 +490,6 @@ enum {
 	o_ARP_THA = 18,
 	o_ARP_TPA = 24,
 };
-
-
-struct message_info;
-{
-	struct ethernet
-	{
-		uint8_t *header;
-	};
-
-	struct ip
-	{
-		uint8_t *header;
-		uint8_t proto;
-		union
-		{
-			struct tcp
-			{
-				uint8_t *header;
-				uint8_t *data;
-				int data_length;
-			};
-			struct udp
-			{
-				uint8_t *header;
-				uint8_t *data;
-				int data_length;
-			};
-			struct other
-			{
-				uint8_t *data;
-				int length;
-			};
-
-		}
-	};
-};
-
-/* verify checksums fields for IP, TCP, UDP, ICMP, and IGMP.  Handles variable-length ip/tcp headers */
-static bool verify_ip_message(const uint8_t *buffer, int length, struct message_info *m)
-{
-	memset(m, 0, sizeof(m));
-	m->ethernet.header = buffer;
-
-	buffer += 14;
-	length -= 14;
-
-	if (length < 20) return false;
-
-	int ip_length = read16(buffer + o_IP_LENGTH);
-	int ihl = buffer[o_IP_IHL];
-	int version = ihl >> 4;
-	ihl = (ihl & 0x0f) << 2;
-
-	if (version != 4) return false;
-	if (ihl < 20) return false;
-	if (ip_length < ihl) return false;
-	if (length < ip_length) return false;
-	length = ip_length;
-
-	if (util::internet_checksum_creator::simple(buffer, ihl) != 0)
-		return false;
-
-	m->ip.header = buffer;
-
-
-	int proto == buffer[o_IP_PROTOCOL];
-	m->ip.proto = proto;
-
-
-	uint8_t pseudo_header[12];
-	memcpy(pseudo_header + 0, buffer + o_IP_SRC_ADDRESS, 4);
-	memcpy(pseudo_header + 4, buffer + o_IP_DEST_ADDRESS, 4);
-
-
-	buffer += ihl;
-	length -= ihl;
-
-	pseudo_header[8] = 0;
-	pseudo_header[9] = proto;
-	pseudo_header[10] = length >> 8;
-	pseudo_header[11] = length;
-
-	if (proto == IP_UDP)
-	{
-		if (length < 8) return false;
-		uint16_t crc = read16(buffer + o_UDP_CHECKSUM);
-		int udp_length = read16(buffer + o_UDP_LENGTH);
-
-		if (length < udp_length) return false;
-
-		if (crc)
-		{
-			util::internet_checksum_creator cr;
-			cr.append(pseudo_header, sizeof(pseudo_header));
-			cr.append(buffer, udp_length);
-			if (cr.finish() != 0) return false;
-		}
-		m->udp.header = buffer;
-		m->udp.data = buffer + 8;
-		m->udp.data_size = udp_length - 8;
-		return true;
-	}
-
-	if (proto == IP_TCP)
-	{
-		if (length < 20) return false;
-		int data_offset = (buffer[o_TCP_DATA_OFFSET] >> 4) << 2;
-		if (data_offset < 20) return false;
-
-		if (length < data_offset) return false;
-
-		int tcp_length = length;
-
-		util::internet_checksum_creator cr;
-		cr.append(pseudo_header, sizeof(pseudo_header));
-		cr.append(buffer + offset, tcp_length);
-		if (cr.finish() != 0) return false;
-
-		m->tcp.header = buffer;
-		m->tcp.data = buffer + data_offset;
-		m->tcp.data_length = tcp_length - data_offset;
-		return true;
-	}
-
-	m->other.data = buffer;
-	m->other.length = length;
-
-	if (proto == IP_ICMP || proto == IP_IGMP)
-	{
-		if (length < 4) return false;
-		if (util::internet_checksum_creator::simple(buffer + offset, length - offset) != 0)
-			return false;
-
-		return true;
-	}
-
-	return true;
-}
 
 
 
@@ -507,64 +516,34 @@ static uint16_t read16(const uint8_t *p)
 	return (p[0] << 8) | p[1];
 }
 
-/* tcp sequence comparisons. */
-// a <= b <= c
-inline static bool ack_valid_le_le(uint32_t a, uint32_t b, uint32_t c)
+
+static void write32(uint8_t *p, uint32_t x)
 {
-	if (a <= c) return (a <= b) && (b <= c);
-	return (a <= b) || (b <= c);
+	p[0] = x >> 24;
+	p[1] = x >> 16;
+	p[2] = x >> 8;
+	p[3] = x >> 0;
 }
 
-// a <= b < c
-inline static bool ack_valid_le_lt(uint32_t a, uint32_t b, uint32_t c)
+static void write16(uint8_t *p, uint16_t x)
 {
-	if (a < c) return (a <= b) && (b < c);
-	return (a <= b) || (b < c);
-
-}
-
-// a < b <= c
-inline static bool ack_valid_lt_le(uint32_t a, uint32_t b, uint32_t c)
-{
-	if (a < c) return (a < b) && (b <= c);
-	return (a < b) || (b <= c);
+	p[0] = x >> 8;
+	p[1] = x >> 0;
 }
 
 
-#if 0
-/* sequence comparisons */
-inline bool seq_lt(uint32_t a, uint32_t b)
-{
-	return static_cast<int32_t>(a - b) < 0; 
-}
-inline bool seq_le(uint32_t a, uint32_t b)
-{
-	return static_cast<int32_t>(a - b) <= 0; 
-}
-inline bool seq_gt(uint32_t a, uint32_t b)
-{
-	return static_cast<int32_t>(a - b) > 0; 
-}
-inline bool seq_ge(uint32_t a, uint32_t b)
-{
-	return static_cast<int32_t>(a - b) >= 0; 
-}
-#endif
 
-w5100_device::w5100_device(machine_config const& mconfig, char const *tag, device_t *owner, u32 clock)
-	: w5100_device(mconfig, W5100, tag, owner, clock)
-{}
-
-w5100_device::w5100_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock)
+w5100_device::w5100_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, dev_type device_type)
 	: device_t(mconfig, type, tag, owner, clock)
 	, device_network_interface(mconfig, *this, 10.0f)
+	, m_device_type(device_type)
+	, m_tcp(*this, "tcp%u", 0U)
 	, m_irq_handler(*this)
 {
 }
 
 void w5100_device::device_start()
 {
-
 	save_pointer(&m_memory[0], "General Registers", 0x400);
 	save_pointer(&m_memory[0x400], "Socket 0 Registers", 0x100);
 	save_pointer(&m_memory[0x500], "Socket 1 Registers", 0x100);
@@ -580,9 +559,27 @@ void w5100_device::device_start()
 
 	m_irq_handler.resolve_safe();
 
-	for (int sn = 0; sn < 4; ++ sn)
+	// 1 extra timer for w5100s socket-less commmand.
+	for (int sn = 0; sn < 5; ++ sn)
 		m_timers[sn] = timer_alloc(sn);
+}
 
+
+void w5100_device::device_add_mconfig(machine_config &config)
+{
+	using tcp_state = tcpip_device::tcp_state;
+
+	for (int sn = 0; sn < 5; ++sn)
+	{
+		TCPIP(config, m_tcp[sn], clock());
+		m_tcp[sn]->set_param(sn);
+		m_tcp[sn]->set_on_state_change([&](tcp_state new_state, tcp_state old_state){
+			tcp_state_change(sn, new_state, old_state);
+		});
+		m_tcp[sn]->set_send_function([this](void *buffer, int length){
+			send(static_cast<u8 *>(buffer), length);
+		});
+	}
 }
 
 
@@ -616,9 +613,33 @@ void w5100_device::device_reset()
 		// socket[Sn_TX_FSR0] = 0x08;
 		// socket[Sn_TX_FSR1] = 0x00;
 
+		if (m_device_type == dev_type::W5100S)
+		{
+			socket[Sn_IMR] = 0xff;
+			socket[Sn_FRAGR0] = 0x40;
+		}
+
 		m_timers[sn]->reset();
-		m_sockets[sn].reset();
+		// m_sockets[sn].reset();
+		m_tcp[sn]->force_close();
 	}
+
+
+	if (m_device_type == dev_type::W5100S)
+	{
+		m_memory[MR] = 0x03;
+		m_memory[MR2] = 0x40;
+		m_memory[PMRUR0] = 0xff;
+		m_memory[PMRUR1] = 0xff;
+		m_memory[PHYSR1] = 0x81;
+		m_memory[PHYDIVR] = 0x01;
+		m_memory[PHYCR1] = 0x41;
+		m_memory[SLRTR0] = 0x07;
+		m_memory[SLRTR1] = 0xd0;
+		m_memory[VERR] = 0x51;
+		m_memory[PHYSR0] = PHYSR0_LINK;
+	}
+
 
 	m_identification = 0;
 
@@ -642,7 +663,7 @@ void w5100_device::device_post_load()
 /*
  * timer callback.
  * re-sends timed out ARP and TCP messages.
- * id is the socket #
+ * id is the socket #. 5 indicates a socketless connection.
  * TODO - param indicates ARP vs TCP, etc
  * W5100s also has socketless connection for ARP/PING
  */
@@ -691,17 +712,41 @@ void w5100_device::device_timer(emu_timer &timer, device_timer_id id, int param)
 
 void w5100_device::update_ethernet_irq()
 {
-	uint8_t ir = m_memory[IR] & 0b11100000;
+	int ir = m_memory[IR] & 0b11100000;
+	int ir2 = 0;
+	int slir = 0;
 
 	for (int sn = 0, bit = IR_S0_INT; sn < 4; ++sn, bit <<= 1)
 	{
 		const uint8_t *socket = m_memory + Sn_BASE + sn * Sn_SIZE;
-		if (socket[Sn_IR]) ir |= bit;
+		int sir = socket[Sn_IR] & 0b00011111;
+
+		if (m_device_type == dev_type::W5100S)
+			sir &= socket[Sn_IMR];
+
+		if (sir) ir |= bit;
 	}
 
 	m_memory[IR] = ir;
+	ir &= m_memory[IMR];
 
-	uint8_t new_state = ir & m_memory[IMR];
+	if (m_device_type == dev_type::W5100S)
+	{
+		ir2 = m_memory[IR2] & 0b00000001;
+		ir2 &= m_memory[IMR2];
+		slir = m_memory[SLIR] & 0b00000111;
+		slir &= m_memory[SLIMR];
+
+		if ((m_memory[MR2] & MR2_IEN) == 0)
+		{
+			ir = 0;
+			ir2 = 0;
+			slir = 0;
+		}
+	}
+
+	uint32_t new_state = (slir << 16) | (ir2 << 8) | (ir);
+
 
 	if (new_state ^ m_irq_state)
 	{
@@ -751,17 +796,39 @@ void w5100_device::write(uint16_t offset, uint8_t data)
 
 	switch(offset)
 	{
+		case MR:
+			if (m_device_type == dev_type::W5100S)
+				data |= MR_AI | MR_IND;
+			break;
+
 		case IR:
 			/* interrupt bits 5-7 cleared by writing 1 to them; bits 0-3 cleared via Sn_IR register */
-			m_memory[IR] &= ~(data & 0b11100000);
+			m_memory[IR] &= ~data;
 			update_ethernet_irq();
 			return;
+
+		case IR2:
+			if (m_device_type == dev_type::W5100S)
+			{
+				m_memory[IR2] &= ~data;
+				update_ethernet_irq();
+			}
+			return;
+
+		case SLIR:
+			if (m_device_type == dev_type::W5100S)
+			{
+				m_memory[SLIR] &= ~data;
+				update_ethernet_irq();
+			}
+			return;
+
 
 		case Sn_IR + Sn_BASE + (Sn_SIZE * 0):
 		case Sn_IR + Sn_BASE + (Sn_SIZE * 1):
 		case Sn_IR + Sn_BASE + (Sn_SIZE * 2):
 		case Sn_IR + Sn_BASE + (Sn_SIZE * 3):
-			m_memory[offset] &= ~(data & 0b00011111);
+			m_memory[offset] &= ~data;
 			update_ethernet_irq();
 			return;
 
@@ -785,6 +852,8 @@ void w5100_device::write(uint16_t offset, uint8_t data)
 			}
 			break;
 
+
+
 		case SHAR0:
 		case SHAR1:
 		case SHAR2:
@@ -797,6 +866,8 @@ void w5100_device::write(uint16_t offset, uint8_t data)
 		case IMR:
 			update_ethernet_irq();
 			break;
+
+
 
 		case RMSR:
 			update_rmsr(data);
@@ -812,6 +883,25 @@ void w5100_device::write(uint16_t offset, uint8_t data)
 			if ((data & Sn_MR_MF) == Sn_MR_MF)
 				set_promisc(false);
 			break;
+
+		case SLIMR:
+			if (m_device_type == dev_type::W5100S)
+				update_ethernet_irq();
+			break;
+
+		case MR2:
+			if (m_device_type == dev_type::W5100S)
+				update_ethernet_irq();
+			break;
+
+		case Sn_IMR + Sn_BASE + (Sn_SIZE * 0):
+		case Sn_IMR + Sn_BASE + (Sn_SIZE * 1):
+		case Sn_IMR + Sn_BASE + (Sn_SIZE * 2):
+		case Sn_IMR + Sn_BASE + (Sn_SIZE * 3):
+			if (m_device_type == dev_type::W5100S)
+				update_ethernet_irq();
+			break;
+
 	}
 
 }
@@ -848,7 +938,6 @@ uint8_t w5100_device::read(uint16_t offset)
 
 	offset &= 0x7fff;
 
-	// if (offset != 0x426 && offset != 0x427) LOG("read(0x%04x)\n", offset);
 	return m_memory[offset];
 }
 
@@ -1081,8 +1170,6 @@ void w5100_device::socket_open(int sn)
 	{
 		case Sn_MR_TCP:
 			sr = Sn_SR_INIT;
-			m_tcp[sn].reset();
-			m_tcp[sn].snd_iss = machine().time().attotime() & 0xffffffff;
 			break;
 		case Sn_MR_UDP:
 			/* TODO -- if multicast bit is set, generate IGMP register message */
@@ -1102,8 +1189,10 @@ void w5100_device::socket_open(int sn)
 			break;
 
 		case Sn_MR_PPPoE: /* pppoe */
+			#if 0
 			if (sn == 0)
 				sr = Sn_SR_PPPOE;
+			#endif
 			break;
 
 		case Sn_MR_CLOSED: /* closed */
@@ -1121,6 +1210,7 @@ void w5100_device::socket_close(int sn)
 	/* TODO - if UDP Multicast, send IGMP leave message */
 	/* also reset interrupts? */
 	// socket[Sn_IR] = 0;
+	m_tcp[sn]->force_close();
 
 }
 
@@ -1186,6 +1276,16 @@ void w5100_device::socket_send(int sn)
 	if (size < 0) size += tx_buffer_size;
 
 	// LOG("send rd=%04x wr=%04x size=%d\n", read_ptr, write_ptr, size);
+
+	if (proto == Sn_MR_TCP)
+	{
+		// no updates until ack 
+		copy_in(buffer, m_memory + tx_buffer_offset, size, read_ptr, tx_buffer_size);
+		m_tcp[sn]->send(buffer, size);
+		return;
+	}
+
+
 
 	int header_size = proto_header_size(proto);
 	int mss = 1514;
@@ -1261,15 +1361,6 @@ void w5100_device::socket_send(int sn)
 	}
 
 
-	// for TCP, break up large packets, don't set SEND_OK until all are acked.
-
-	if (proto == Sn_MR_TCP)
-	{
-		/* split up based on snd_win and mss */
-
-
-
-	}
 
 }
 
@@ -1280,9 +1371,9 @@ void w5100_device::socket_send_mac(int sock)
 
 void w5100_device::socket_send_keep(int sn)
 {
-	// TCP keep-alive is handled as an ACK of the most previously acked message.
-	// TODO -- does this enable keep-alive to be occasionally sent
-	// or does it send 1 keep-alive message?
+	// turns on keep-alive messages.
+	// see also Sn_KPALVTR (w5100s)
+	m_tcp[sn]->set_keep_alive_timer(30);
 }
 
 void w5100_device::socket_connect(int sn)
@@ -1291,24 +1382,21 @@ void w5100_device::socket_connect(int sn)
 	if (!find_mac(sn))
 		return;
 
-
 	uint8_t *socket = m_memory + Sn_BASE + sn * Sn_SIZE;
-
 
 	// find a free port.
 	uint16_t port = allocate_port(Sn_MR_TCP);
 	socket[Sn_PORT0] = port << 8;
 	socket[Sn_PORT1] = port;
 
+	auto tcp = m_tcp[sn];
 
-	send_tcp_packet(sn, TCP_SYN, snd_iss, 0);
-
-	m_tcp[sn].snd_una = m_tcp[sn].snd_iss; 
-	m_tcp[sn].snd_nxt = m_tcp[sn].snd_iss + 1;
-
-	socket[Sn_SR] = Sn_SR_SYNSENT;
-
-	// todo -- timer.
+	tcp->set_local_ip(read32(m_memory + SIPR0));
+	tcp->set_local_port(port);
+	tcp->set_local_mac(m_memory + SHAR0);
+	tcp->set_remote_mac(socket + Sn_DHAR0);
+	// todo -- buffer size,
+	tcp->open(read32(socket + Sn_DIPR0), read16(socket + Sn_DPORT0));
 }
 
 // TCP client:  DPORT set before creation, PORT locally generated.
@@ -1319,7 +1407,6 @@ void w5100_device::socket_connect(int sn)
 /* find an unused port in the range 0xc000-0xffff */
 uint16_t w5100_device::allocate_port(int proto)
 {
-	int port;
 	int used[4];
 
 
@@ -1334,11 +1421,10 @@ uint16_t w5100_device::allocate_port(int proto)
 		}
 	}
 
-	port = machine().time().attotime() & 0xffff;
-	bool unique = true;
-	do
+	int port = machine().time().attoseconds() & 0xffff;
+	for(;;)
 	{
-		unique = true;
+		bool unique = true;
 		port |= 0xc0000;
 		for (int sn = 0; sn < 4; ++sn)
 		{
@@ -1349,33 +1435,13 @@ uint16_t w5100_device::allocate_port(int proto)
 				break;
 			}
 		}
-	} while (!unique);
-	return port;
-
+		if (unique) return port;
+	}
 }
 
 void w5100_device::socket_disconnect(int sn)
 {
-	// rfc 793 page 60
-
-	uint8_t *socket = m_memory + Sn_BASE + sn * Sn_SIZE;
-
-	uint8_t &sr = socket[Sn_SR];
-
-	// TODO -- should be queued until all pending data is sent and acked.
-
-	send_tcp_packet(sn, TCP_FIN | TCP_ACK, snd_nxt , rcv_nxt);
-	++snd_nxt;
-
-	switch(sr)
-	{
-		case Sn_SR_ESTABLISHED:
-			sr = Sn_SR_FIN_WAIT;
-			break;
-		case Sn_SR_CLOSE_WAIT:
-			sr = Sn_SR_LAST_ACK;
-			break;
-	}
+	m_tcp[sn]->close();
 }
 
 void w5100_device::socket_recv(int sn)
@@ -1430,6 +1496,7 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 	int ip_port = 0;
 	bool macraw = m_memory[Sn_SR + Sn_BASE] == Sn_SR_MACRAW;
 
+	int mr2 = m_device_type == dev_type::W5100S ? m_memory[MR2] : 0;
 
 
 	LOG("recv_cb %d\n", length);
@@ -1454,6 +1521,13 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 		int mr = m_memory[Sn_MR + Sn_BASE];
 		if (macraw && !(mr & Sn_MR_MF))
 		{
+			if (m_device_type == dev_type::W5100S)
+			{
+				int mr2 = m_memory[Sn_MR2 + Sn_BASE];
+				if ((mr2 & Sn_MR2_MBBLK) && is_broadcast) return;
+				if ((mr2 & Sn_MR2_MMBLK) && is_multicast) return;
+				if ((mr2 & Sn_MR2_IPV6BLK) && ethertype == ETHERTYPE_IPV6) return;
+			}
 			receive(0, buffer, length);
 		}
 		return;
@@ -1485,6 +1559,8 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 
 	}
 
+	bool handle_udp = false;
+	bool handle_tcp = false;
 	// find a matching socket
 	for (int sn = 0; sn < 4; ++sn)
 	{
@@ -1502,21 +1578,26 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 			return;
 		}
 
-		if (proto == Sn_MR_UDP && is_udp && ip_port == port)
+		if (proto == Sn_MR_UDP)
 		{
-			receive(sn, buffer, length);
-			return;
+			handle_udp = true;
+			if (is_udp && ip_port == port)
+			{
+				receive(sn, buffer, length);
+				return;
+			}
 		}
 
-		if (proto == Sn_MR_TCP is_tcp && ip_port == port && is_unicast)
+		if (proto == Sn_MR_TCP)
 		{
-			// send to macraw/ipraw if it doesn't match???
-			tcp_receive(sn, buffer, length)
-			return;
+			handle_tcp = true;
+			if (m_tcp[sn]->check_segment(buffer, length))
+			{
+				m_tcp[sn]->segment(buffer, length);
+				return;
+			}
 		}
 	}
-
-
 
 
 	if (is_icmp)
@@ -1542,9 +1623,37 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 		}
 	}
 
+	if (is_udp && (handle_udp || !macraw))
+	{
+		if (is_unicast)
+		{
+			if (mr2 & MR2_UDPURB) return;
+			// generate ICMP destination unreachable.
+		}
+		return;
+	}
+	if (is_tcp && (handle_tcp || !macraw))
+	{
+		if (is_unicast)
+		{
+			m_tcp[4]->segment(buffer, length); // socket 5 is always closed, will RST.
+		}
+		return;
+	}
+
 	/* if socket 0 is an open macraw socket, it can accept anything. */
 	if (macraw)
+	{
+		if (m_device_type == dev_type::W5100S)
+		{
+			int mr2 = m_memory[Sn_MR2 + Sn_BASE];
+			if ((mr2 & Sn_MR2_MBBLK) && is_broadcast) return;
+			if ((mr2 & Sn_MR2_MMBLK) && is_multicast) return;
+			if ((mr2 & Sn_MR2_IPV6BLK) && ethertype == ETHERTYPE_IPV6) return;
+		}
 		receive(0, buffer, length);
+	}
+
 
 	// TODO -- 5100s specifies that it sends RST (for TCP) and ICMP unreachable (for UDP)
 	// if no matching port. (with register to disable).
@@ -1621,10 +1730,6 @@ void w5100_device::receive(int sn, const uint8_t *buffer, int length)
 
 			header_size = 8;
 			break;
-		case Sn_MR_TCP:
-			offset = 34 + ((buffer[46] >> 2) & 0xfc); // data offset = tcp header size, in 32-bit words.
-			length -= offset;
-			header_size = 0;
 	}
 
 	// drop the packet if no room.
@@ -1677,9 +1782,11 @@ bool w5100_device::find_mac(int sn)
 
 	// TODO support for own ip address?
 
+	// TODO - w5100s FARP mode.
+
 	uint8_t *socket = m_memory + Sn_BASE + sn * Sn_SIZE;
 
-	if (socket[Sn_MR] & 0x8f) == (Sn_MR_UDP | Sn_MR_MULT) return true; // multi-cast
+	if ((socket[Sn_MR] & 0x8f) == (Sn_MR_UDP | Sn_MR_MULT)) return true; // multi-cast
 
 	uint32_t gateway = read32(&m_memory[GAR0]);
 	uint32_t subnet = read32(&m_memory[SUBR0]);
@@ -1952,9 +2059,9 @@ void w5100_device::build_udp_header(int sn, uint8_t *buffer, int length)
 	cc.append(socket + Sn_DIPR0, 4); // dest ip
 	cc.append(static_cast<uint16_t>(IP_UDP));
 	cc.append(static_cast<uint16_t>(length + 20));
-	cc.append(buffer + 34, length)
+	cc.append(buffer + 34, length);
 
-	crc = cr.finish();
+	crc = cc.finish();
 	if (crc == 0) crc = 0xffff;
 	buffer[40] = crc >> 8;
 	buffer[41] = crc;
@@ -1993,463 +2100,7 @@ void w5100_device::handle_ping_reply(uint8_t *buffer, int length)
 }
 
 
-struct tcp_info
-{
-	uint32_t seq;
-	uint32_t ack;
 
-	uint8_t dhar[6];
-	uint8_t dip[4];
-	uint16_t dport;
-	uint16_t port;
-	uint16_t window;
-
-
-	uint8_t tos;
-	uint8_t ttl;
-	uint8_t flags;
-};
-
-/* send a response (ACK and/or RST) */
-/* ip address, port, MAC, taken from TCP/IP message in buffer */
-void w5100_device::send_tcp_packet(const uint8_t *buffer, int flags, uint32_t seq, uint32_t ack)
-{
-	static const int MESSAGE_SIZE = 54;
-	uint8_t message[MESSAGE_SIZE];
-
-	struct tcp_info ti{};
-
-	memcpy(ti.dhar, buffer + o_ETHERNET_SRC, 6);
-	memcpy(ti.dip, buffer + o_IP_SRC_ADDRESS, 4);
-	ti.dport = read16(buffer + o_TCP_SRC_PORT);
-	ti.port = read16(buffer + o_TCP_DEST_PORT);
-	ti.window = 0;
-	ti.seq = seq;
-	ti.ack = ack;
-	ti.tos = 0;
-	ti.ttl = 0x80;
-	ti.flags = flags;
-
-	build_tcp_header(message, sizeof(message), ti);
-	send(message, sizeof(message));
-}
-
-void w5100_device::send_tcp_packet(int sn, int flags, uint32_t seq, uint32_t ack)
-{
-	static const int MESSAGE_SIZE = 54;
-	uint8_t message[MESSAGE_SIZE];
-
-	build_tcp_header(sn, message, sizeof(message), flags, seq, ack);
-	send(message, sizeof(message));
-	// set timer?
-}
-
-
-void w5100_device::build_tcp_header(int sn, uint8_t *buffer, int length, int flags, uint32_t seq, uint32_t ack)
-{
-	uint8_t *socket = m_memory + Sn_BASE + Sn_SIZE * sn;
-
-	struct tcp_info ti{};
-	ti.seq = seq;
-	ti.ack = ack;
-	ti.flags = flags;
-
-	ti.window = (m_sockets[sn].tx_buffer_size -  read16(socket + Sn_RX_RSR0));
-	ti.ttl = socket[Sn_TTL];
-	ti.tos = socket[Sn_TOS];
-	ti.port = read16(socket + Sn_PORT0);
-	ti.dport = read16(socket + Sn_DPORT0);
-	memcpy(ti.dip, socket + Sn_DIPR0, 4);
-	memcpy(ti.dhar, socket + Sn_DHAR0, 6);
-
-	build_tcp_header(buffer, length, ti);
-}
-
-void w5100_device::build_tcp_header(uint8_t *buffer, int length, const struct tcp_info &ti)
-{
-	memcpy(buffer + 0, ti.dhar, 6);
-	memcpy(buffer + 6, m_memory + SHAR0, 6);
-	buffer[12] = ETHERTYPE_IP >> 8;
-	buffer[13] = ETHERTYPE_IP;
-
-	length -= 14;
-	++m_identification;
-
-
-	buffer[14] = 0x45; // IPv4, length = 5*4
-	buffer[15] = ti.tos;
-	buffer[16] = length >> 8; // total length
-	buffer[17] = length;
-	buffer[18] = m_identification >> 8; // identification
-	buffer[19] = m_identification;
-	buffer[20] = 0x40; // flags - don't fragment
-	buffer[21] = 0x00;
-	buffer[22] = ti.ttl;
-	buffer[23] = IP_TCP;
-	buffer[24] = 0; // checksum...
-	buffer[25] = 0;
-	memcpy(buffer + 26, m_memory + SIPR0, 4); // source ip
-	memcpy(buffer + 30, ti.dip, 4); // destination ip
-
-	length -= 20;
-
-	// tcp header
-	buffer[34] = ti.port >> 8 // source port
-	buffer[35] = ti.port;
-	buffer[36] = ti.dport >> 8; // dest port
-	buffer[37] = ti.dport;
-
-	buffer[38] = (ti.seq >> 24) & 0xff;
-	buffer[39] = (ti.seq >> 16) & 0xff;
-	buffer[40] = (ti.seq >> 8) & 0xff;
-	buffer[41] = (ti.seq >> 0) & 0xff;
-
-	buffer[42] = (ti.ack >> 24) & 0xff;
-	buffer[43] = (ti.ack >> 16) & 0xff;
-	buffer[44] = (ti.ack >> 8) & 0xff;
-	buffer[45] = (ti.ack >> 0) & 0xff;
-
-	buffer[46] = 0x50; // header = 4 * 5 bytes
-	buffer[47] = ti.flags;
-
-	buffer[48] = ti.window >> 8; // window size
-	buffer[49] = ti.window;
-
-	buffer[50] = 0; // checksum
-	buffer[51] = 0;
-
-	buffer[52] = 0; // urgent pointer
-	buffer[53] = 0;
-
-	uint16_t crc;
-
-	crc = util::internet_checksum_creator.simple(buffer + 14, 20)
-	buffer[24] = crc >> 8;
-	buffer[25] = crc;
-
-	util::internet_checksum_creator cc;
-
-	// ip pseudo header.
-	cc.append(m_memory + SIPR0, 4); // source ip
-	cc.append(ti.dip, 4); // dest ip
-	cc.append(static_cast<uint16_t>(IP_TCP));
-	cc.append(static_cast<uint16_t>(length + 20));
-	cc.append(buffer + 34, length)
-
-	crc = cr.finish();
-
-	buffer[50] = crc >> 8;
-	buffer[51] = crc;
-}
-
-
-
-
-
-bool w5100_device::tcp_receive(int sn, const uint8_t *buffer, int length)
-{
-
-
-	uint32_t seg_seq = 0;
-	uint32_t seg_ack = 0;
-	uint32_t seg_len = 0;
-	uint32_t seg_wnd = 0;
-	uint32_t seg_up = 0;
-	// uint32_t seg_prc = 0; // precedence; was in ip tos field
-
-	/* SYN packets may contain data; it will be ignored (RFC 4987 - TCP SYN Flooding Attacks and Common Mitigations) */
-
-
-
-	int flags = buffer[o_TCP_FLAGS];
-
-
-	seg_seq = read32(buffer + o_TCP_SEQ_NUMBER);
-	seg_ack = read32(buffer + o_TCP_ACK_NUMBER);
-	seg_len = read16(buffer + o_IP_LENGTH - tcp header - ip header);
-	seg_wnd = read16(buffer + o_TCP_WINDOW_SIZE); // window scaling not yet supported.
-	seg_up = read16(buffer + o_TCP_URGENT);
-
-	flags = flags & ~(TCP_SYN|TCP_ACK|TCP_FIN|TCP_RST);
-
-	if (sn < 0)
-	{
-		// rfc 793, page 65
-		// discard the packet ; send RST unless this is an RST
-		if (flags & TCP_RST) return;
-
-		// if (flags & (TCP_SYN|TCP_FIN)) seg_len++;
-		// linux sends RST|ACK w/ 00, seq + 1 for SYN to closed port....
-		if (flags & ACK)
-			send_tcp_segment(buffer, TCP_RST | TCP_ACK, 0, seg_seq + seg_len);
-		else
-			send_tcp_segment(buffer, TCP_RST, seg_ack, 0);
-		return;
-	}
-
-	uint8_t *socket = m_memory + Sn_BASE + sn * Sn_SIZE;
-	uint8_t &sr = socket[Sn_SR];
-
-
-	if (sr == Sn_SR_LISTEN)
-	{
-		// page 65
-		if (flags & TCP_RST) return;
-		if (flags & TCP_ACK)
-		{
-			send_tcp_packet(buffer, TCP_RST, seg_ack, 0);
-			return;
-		}
-		if (flags == TCP_SYN)
-		{
-			memcpy(socket + Sn_DIPR0, buffer + o_IP_SRC_ADDRESS, 4);
-			memcpy(socket + Sn_DPORT0, buffer + o_TCP_SRC_PORT, 2);
-			memcpy(socket + Sn_DHAR0, buffer + o_ETHERNET_SRC, 6);
-
-
-			m_tcp[sn].irs = seg_seq;
-			m_tcp[sn].rcv_nxt = seg_seq + 1;
-
-			send_tcp_packet(sn, TCP_SYN | TCP_ACK, m_tcp[sn].iss, m_tcp[sn].rcv_nxt);
-
-			m_tcp[sn].snd_nxt = m_tcp[sn].iss + 1;
-			m_tcp[sn].snd_una = m_tcp[sn].iss;
-
-			sr = Sn_SR_SYNRECV;
-		}
-		return;
-	}
-	else
-	{
-		// RST if ip/port doesn't match.
-		if (memcmp(socket + Sn_DPORT0, buffer + o_TCP_SRC_PORT, 2) || memcmp(socket + Sn_DIPR0, buffer + o_IP_SRC_ADDRESS, 4))
-		{
-			if (flags & TCP_RST) return;
-
-			if (flags & ACK)
-				send_tcp_segment(buffer, TCP_RST | TCP_ACK, 0, seg_seq + seg_len);
-			else
-				send_tcp_segment(buffer, TCP_RST, seg_ack, 0);
-			return;
-		}
-	}
-
-
-
-	// compare ack, seq, etc...
-
-	// handle RST first
-	// but RST w/ invalid ack is probably malicious or for an old connection.
-	if (flags & TCP_RST)
-	{
-		sr = Sn_SR_CLOSED;
-		m_timers[sn]->reset();
-		socket[Sn_IR] |= Sn_IR_DISCON;
-		update_ethernet_irq();
-		return true;
-	}
-
-
-
-
-	switch(sr)
-	{
-		case Sn_SR_LISTEN:
-			// handled above as a special case.
-			break;
-
-		case Sn_SR_SYNSENT:
-			// page 66/67
-
-			// snd_una = iss.  snd_nxt = iss+1
-			// TCP model also allows SYN w/o ACK (which transitions to SYN-RECV)
-	
-
-			if (flags & TCP_ACK)
-			{
-				ack_ok = seg_ack != snd_nxt; //ack_valid_le_lt(snd_una, seg_ack, snd_nxt);
-
-				if (!ack_ok)
-				{
-					if (!(flags & TCP_RST))
-						send_tcp_packet(sn, TCP_RST, seg_ack, 0);
-					return;
-				}
-			}
-
-			if (flags & TCP_RST)
-			{
-				// if ack is valid, close the connection.
-				// otherwise, drop it.
-				if (ack_ok)
-				{
-					sr = Sn_SR_CLOSED;
-					socket[sn_IR] |= Sn_IR_DISCON;
-					update_ethernet_irq();
-				}
-				return;
-			}
-
-			if (flags == TCP_SYN | TCP_ACK)
-			{
-
-				if (ack_ok)
-				{
-					send_tcp_packet(sn, TCP_RST, seg_ack, 0);
-					return;
-				}
-
-				m_tcp[sn].rcv_next = seg_seq + 1;
-				m_tcp[sn].irs = seg_seq;
-				m_tcp[sn].snd_una = seg_ack;
-
-				sr = Sn_SR_ESTABLISHED;
-				send_tcp_packet(sn, TCP_ACK, snd_nxt, rcv_nxt);
-				socket[Sn_IR] |= Sn_IR_CON;
-				update_ethernet_irq();
-			}	
-
-
-			break;
-
-		case Sn_SR_SYNRECV:
-		case Sn_SR_ESTABLISHED:
-		case Sn_SR_CLOSE_WAIT:
-		case Sn_SR_LAST_ACK:
-		case Sn_SR_TIME_WAIT:
-		case Sn_SR_FIN_WAIT:
-			if (flags & TCP_RST)
-			{
-				sr = Sn_SR_CLOSED;
-				socket[sn_IR] |= Sn_IR_DISCON;
-				update_ethernet_irq();
-				return;
-			}
-
-			if (seg_len == 0 && m_tcp[sn].rcv_wnd == 0)
-				ok = seg_seq == m_tcp[sn].rcv_nxt;
-			else if (seg_len == 0 && m_tcp[sn].rcv_wnd > 0)
-				ok = (rcv_nxt <= seg_seq && seg_seq < rcv_nxt + rcv_wnd);
-			else if (seg_len > 0 && rcv_wnd == 0)
-				ok = false;
-			else
-				ok = rcv_nxt <= seg_seq && seg_seq < rcv_nxt + rcv_wnd;
-				ok |= rcv_nxt <= seg_seq + seg_len - 1 && seg_seq + seg_len < rcv_nxt + rcv_wnd;
-			if (!ok)
-			{
-				send_tcp_packet(sn, TCP_ACK, snd_nxt, rcv_nxt);
-				return;
-			}
-
-			if (flags & TCP_SYN)
-			{
-				// if SYN is in the window, RST and close  --- ???????
-
-			}
-			if (!flags & TCP_ACK)
-				return;
-			if (sr == Sn_SR_SYNRECV)
-			{
-				if (snd_una <= seg_ack && seg_ack <= snd_next)
-					sr = Sn_SR_ESTABLISHED;
-				else
-				{
-					send_tcp_packet(sn, TCP_RST, seg_ack, 0);
-					return;
-				}
-			}
-			if (sr == Sn_SR_ESTABLISHED || sr == Sn_SR_FIN_WAIT || sr == Sn_SR_CLOSE_WAIT)
-			{
-				if (seg_ack < snd_una) return; // duplicate -- ignore
-				if (seg_ack > snd_next)
-				{
-					// send an ack, drop the segment, return.
-					return;
-				}
-				if (snd_una < seg_ack && seg_ack <= snd_nxt)
-				{
-					snd_una = seg_ack;
-					// update FSR
-					// possibly send another data segment
-					// possibly generate SEND_OK interrupt
-
-					// TODO -- update send window...
-
-				}
-
-			}
-
-
-		case Sn_SR_SYNRECV:
-			if (flags & TCP_ACK)
-			{
-				ack_ok = ack_valid_le_le(snd_una, seg_ack, snd_nxt);
-				if (ack_ok)
-				{
-					sr = Sn_SR_ESTABLISHED;
-					socket[Sn_IR] |= Sn_IR_CON;
-					update_ethernet_irq();
-				}
-				else
-				{
-					send_tcp_packet(sn, TCP_RST, seg_ack, 0);
-				}
-			}
-			if (flags == TCP_ACK)
-			{
-				m_timers[sn]->reset();
-
-				sr = Sn_SR_ESTABLISHED;
-
-				return true;
-			}
-			break;
-
-		case Sn_SR_ESTABLISHED:
-			if (flags == TCP_FIN)
-			{
-				m_timers[sn]->reset();
-				m_sockets[sn].tcp_ack++;
-				send_tcp_packet(TCP_ACK);
-
-				sr = Sn_SR_CLOSE_WAIT;
-				socket[Sn_IR] |= Sn_IR_DISCON;
-				update_ethernet_irq();
-				return true;
-			}
-
-		case Sn_SR_CLOSE_WAIT:
-			// may still send/recv data.
-			break;
-
-		case Sn_SR_LAST_ACK:
-			if (flags == TCP_ACK)
-			{
-				m_timers[sn]->reset();
-				sr = Sn_SR_CLOSED;
-				return true;
-			}
-			break;
-
-		case Sn_SR_FIN_WAIT:
-			// n.b. - no FIN_WAIT2
-			if (flags & TCP_FIN)
-			{
-				m_sockets[sn].tcp_ack++;
-				sr = Sn_SR_TIME_WAIT;
-				socket[Sn_IR] |= Sn_IR_DISCON;
-				update_ethernet_irq();
-
-				send_tcp_packet(TCP_ACK);
-			}
-			break;
-
-		case Sn_SR_TIME_WAIT:
-			return true;
-
-	}
-
-}
 
 void w5100_device::dump_bytes(const uint8_t *buffer, int length)
 {
@@ -2482,12 +2133,90 @@ void w5100_device::dump_bytes(const uint8_t *buffer, int length)
 	}
 }
 
+/* tcp */
+
+void w5100_device::tcp_state_change(int sn, tcpip_device::tcp_state new_state, tcpip_device::tcp_state old_state)
+{
+	auto tcp = m_tcp[sn];
+
+	uint8_t *socket = m_memory + Sn_BASE + sn * Sn_SIZE;
+	uint8_t &sr = socket[Sn_SR];
+
+	// TODO -- disconnect irqs.
+
+	using tcp_state = tcpip_device::tcp_state;
+	switch(new_state)
+	{
+		case tcp_state::TCPS_CLOSED:
+			sr = Sn_SR_CLOSED;
+			break;
+
+		case tcp_state::TCPS_LISTEN:
+			if (old_state == tcp_state::TCPS_CLOSED)
+				sr = Sn_SR_LISTEN;
+			else
+			{
+				tcp->close();
+				sr = Sn_SR_CLOSED;
+			}
+			break;
+
+		case tcp_state::TCPS_SYN_SENT:
+			sr = Sn_SR_SYNSENT;
+			break;
+
+		case tcp_state::TCPS_SYN_RECEIVED:
+			if (old_state == tcp_state::TCPS_LISTEN)
+			{
+				write32(socket + Sn_DIPR0, tcp->get_remote_ip());
+				write16(socket + Sn_DPORT0, tcp->get_remote_ip());
+				memcpy(socket + Sn_DHAR0, tcp->get_remote_mac(), 6);
+			}
+			sr = Sn_SR_SYNRECV;
+			break;
+
+		case tcp_state::TCPS_ESTABLISHED:
+			sr = Sn_SR_ESTABLISHED;
+			socket[Sn_IR] |= Sn_IR_CON;
+			update_ethernet_irq();
+			break;
+
+		case tcp_state::TCPS_CLOSE_WAIT:
+			sr = Sn_SR_CLOSE_WAIT;
+			break;
+
+		case tcp_state::TCPS_FIN_WAIT_1:
+		case tcp_state::TCPS_FIN_WAIT_2:
+			sr = Sn_SR_FIN_WAIT;
+			break;
+
+		case tcp_state::TCPS_CLOSING:
+			sr = Sn_SR_CLOSING;
+			break;
+
+		case tcp_state::TCPS_LAST_ACK:
+			sr = Sn_SR_LAST_ACK;
+			break;
+
+		case tcp_state::TCPS_TIME_WAIT:
+			sr = Sn_SR_TIME_WAIT;
+			break;
+	}
+}
 
 
 
+w5100_device::w5100_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: w5100_device(mconfig, W5100, tag, owner, clock, dev_type::W5100)
+{
+}
 
-
+w5100s_device::w5100s_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: w5100_device(mconfig, W5100S, tag, owner, clock, dev_type::W5100S)
+{
+}
 
 
 
 DEFINE_DEVICE_TYPE(W5100, w5100_device, "w5100", "WIZnet W5100 Ethernet Controller")
+DEFINE_DEVICE_TYPE(W5100S, w5100s_device, "w5100s", "WIZnet W5100s Ethernet Controller")
