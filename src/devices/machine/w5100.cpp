@@ -11,11 +11,6 @@
   https://docs.wiznet.io/Product/iEthernet/W5100/
   Uthernet II User's and Programmer's Manual
 
-  RFC 793: TCP Functional Specification
-  RFC 1122: Requirements for Internet Hosts -- Communication Layers
-
-  TCP/IP Illustrated, Volume 1: The Protocols
-  TCP/IP Illustrated, Volume 2: The Implementation
 
   0x0000-0x012f - common registers
   0x0030-0x03ff - reserved
@@ -29,7 +24,6 @@
 /*
 TODO:
 - UDP multicast - igmp messages
-- TCP
 - ICMP unreachable port
 - W5100s support?
 */
@@ -442,27 +436,6 @@ enum {
 
 };
 
-enum {
-	o_TCP_SRC_PORT = 0,
-	o_TCP_DEST_PORT = 2,
-	o_TCP_SEQ_NUMBER = 4,
-	o_TCP_ACK_NUMBER = 8,
-	o_TCP_DATA_OFFSET = 12,
-	o_TCP_FLAGS = 13,
-	o_TCP_WINDOW_SIZE = 14,
-	o_TCP_CHECKUSM = 16,
-	o_TCP_URGENT = 18,
-
-	TCP_FIN = 0x01,
-	TCP_SYN = 0x02,
-	TCP_RST = 0x04,
-	TCP_PSH = 0x08,
-	TCP_ACK = 0x10,
-	TCP_URG = 0x20,
-	TCP_ECE = 0x40,
-	TCP_CWR = 0x80,
-
-};
 
 
 enum {
@@ -1555,7 +1528,7 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 		if (ip_proto == IP_ICMP) is_icmp = true;
 		if (ip_proto == IP_TCP) is_tcp = true;
 		if (ip_proto == IP_UDP) is_udp = true;
-		if (is_udp || is_tcp) ip_port = (buffer[o_TCP_DEST_PORT] << 8) | buffer[o_TCP_DEST_PORT + 1];
+		if (is_udp || is_tcp) ip_port = (buffer[o_UDP_DEST_PORT] << 8) | buffer[o_UDP_DEST_PORT + 1];
 
 	}
 
@@ -2145,24 +2118,29 @@ void w5100_device::tcp_state_change(int sn, tcpip_device::tcp_state new_state, t
 	// TODO -- disconnect irqs.
 
 	using tcp_state = tcpip_device::tcp_state;
+	using disconnect_type = tcpip_device::disconnect_type;
+
+	disconnect_type dt = disconnect_type::none;
+
 	switch(new_state)
 	{
 		case tcp_state::TCPS_CLOSED:
 			sr = Sn_SR_CLOSED;
-			break;
-
-		case tcp_state::TCPS_LISTEN:
-			if (old_state == tcp_state::TCPS_CLOSED)
-				sr = Sn_SR_LISTEN;
-			else
+			dt = tcp->get_disconnect_type();
+			if (dt == disconnect_type::rst || dt == disconnect_type::active)
 			{
-				tcp->close();
-				sr = Sn_SR_CLOSED;
+				socket[Sn_IR] |= Sn_IR_DISCON; // fin packet recvd.
+				update_ethernet_irq();	
 			}
 			break;
 
+		case tcp_state::TCPS_LISTEN:
+			sr = Sn_SR_LISTEN;
+			break;
+
 		case tcp_state::TCPS_SYN_SENT:
-			sr = Sn_SR_SYNSENT;
+			if (old_state != tcp_state::TCPS_SYN_RECEIVED)
+				sr = Sn_SR_SYNSENT;
 			break;
 
 		case tcp_state::TCPS_SYN_RECEIVED:
@@ -2183,6 +2161,8 @@ void w5100_device::tcp_state_change(int sn, tcpip_device::tcp_state new_state, t
 
 		case tcp_state::TCPS_CLOSE_WAIT:
 			sr = Sn_SR_CLOSE_WAIT;
+			socket[Sn_IR] |= Sn_IR_DISCON; // fin packet recvd.
+			update_ethernet_irq();
 			break;
 
 		case tcp_state::TCPS_FIN_WAIT_1:

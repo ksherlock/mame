@@ -46,6 +46,13 @@ public:
 		connection_reset,
 	};
 
+	enum class disconnect_type {
+		none,
+		active,
+		passive,
+		rst,
+	};
+
 #if 0
 	enum class tcp_event {
 		state_change,
@@ -85,6 +92,7 @@ public:
 	uint16_t get_remote_port() const { return m_remote_port; }
 	const uint8_t *get_remote_mac() const { return m_remote_mac; }
 
+	disconnect_type get_disconnect_type() const { return m_disconnect_type; }
 
 	void set_send_buffer_size(int);
 	void set_receive_buffer_size(int);
@@ -113,9 +121,15 @@ protected:
 
 private:
 
+	void disconnect(disconnect_type dt, tcp_state new_state = tcp_state::TCPS_CLOSED);
+
 	uint32_t generate_iss(void) const;
 
 	void set_state(tcp_state new_state);
+
+
+	void send_segment(int flags, uint32_t seq, uint32_t ack);
+
 
 	tcp_state m_state = tcp_state::TCPS_CLOSED;
 	int m_param = 0;
@@ -136,8 +150,8 @@ private:
 	uint32_t m_snd_nxt = 0; // next seq number to send
 	uint32_t m_snd_wnd = 0; // send window
 	uint32_t m_snd_up = 0; // send urgent pointer
-	uint32_t m_wl1 = 0; // seg seq of last window update
-	uint32_t m_wl2 = 0; // seg ack of last window update
+	uint32_t m_snd_wl1 = 0; // seg seq of last window update
+	uint32_t m_snd_wl2 = 0; // seg ack of last window update
 	uint32_t m_iss = 0; // initial send seq
 
 	uint32_t m_rcv_nxt = 0; // receive next
@@ -146,7 +160,11 @@ private:
 	uint32_t m_irs = 0; // initial recv seq number
 
 	bool m_fin_pending = false;
-	bool m_syn_send = false;
+	bool m_psh_pending = false;
+	bool m_passive = false;
+	disconnect_type m_disconnect_type = disconnect_type::none;
+
+	// bool m_syn_send = false;
 
 	std::vector<uint8_t> m_recv_buffer;
 	std::vector<uint8_t> m_send_buffer;
