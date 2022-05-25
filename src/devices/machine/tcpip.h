@@ -128,7 +128,9 @@ private:
 	void set_state(tcp_state new_state);
 
 
+	void rst_closed_socket(const void *buffer, int flags, uint32_t ack, uint32_t seq_end);
 	void send_segment(int flags, uint32_t seq, uint32_t ack);
+	void send_segment(const uint8_t *src, int flags, uint32_t seq, uint32_t ack);
 
 
 	tcp_state m_state = tcp_state::TCPS_CLOSED;
@@ -139,9 +141,11 @@ private:
 	uint32_t m_local_ip = 0;
 	uint32_t m_remote_ip = 0;
 
-	uint8_t m_local_mac[6];
-	uint8_t m_remote_mac[6];
+	uint8_t m_local_mac[6]{};
+	uint8_t m_remote_mac[6]{};
 
+	int m_ttl = 64;
+	int m_mss = 536;
 	int m_keep_alive = 0;
 
 
@@ -166,11 +170,16 @@ private:
 
 	// bool m_syn_send = false;
 
-	std::vector<uint8_t> m_recv_buffer;
-	std::vector<uint8_t> m_send_buffer;
+	uint8_t *m_recv_buffer = nullptr;
+	uint8_t *m_send_buffer = nullptr;
 
 	int m_recv_buffer_capacity = 0;
+	int m_recv_buffer_size = 0;
+	int m_recv_buffer_psh_offset = 0;
+
 	int m_send_buffer_capacity = 0;
+	int m_send_buffer_size = 0;
+
 
 	emu_timer *m_timer = nullptr;
 
