@@ -289,7 +289,6 @@ void tcpip_device::device_reset()
 	m_state = tcp_state::TCPS_CLOSED;
 
 	m_fin_pending = false;
-	m_passive = false;
 
 	m_keep_alive = 0;
 	m_mss = 536;
@@ -314,6 +313,7 @@ void tcpip_device::device_reset()
 	m_rcv_up = 0;
 	m_irs = 0;
 
+	m_connect_type = connect_type::none;
 	m_disconnect_type = disconnect_type::none;
 
 
@@ -572,7 +572,7 @@ void tcpip_device::segment(const void *buffer, int length)
 		switch(m_state)
 		{
 			case tcp_state::TCPS_SYN_RECEIVED:
-				disconnect(disconnect_type::rst, m_passive ? tcp_state::TCPS_LISTEN : tcp_state::TCPS_CLOSED);
+				disconnect(disconnect_type::rst, m_connect_type == connect_type::passive ? tcp_state::TCPS_LISTEN : tcp_state::TCPS_CLOSED);
 				return;
 			case tcp_state::TCPS_ESTABLISHED:
 			case tcp_state::TCPS_FIN_WAIT_1:
@@ -598,7 +598,7 @@ void tcpip_device::segment(const void *buffer, int length)
 		switch(m_state)
 		{
 			case tcp_state::TCPS_SYN_RECEIVED:
-				disconnect(disconnect_type::rst, m_passive ? tcp_state::TCPS_LISTEN : tcp_state::TCPS_CLOSED);
+				disconnect(disconnect_type::rst, m_connect_type == connect_type::passive ? tcp_state::TCPS_LISTEN : tcp_state::TCPS_CLOSED);
 				return;
 			case tcp_state::TCPS_ESTABLISHED:
 			case tcp_state::TCPS_FIN_WAIT_1:
@@ -842,7 +842,7 @@ tcpip_device::tcp_error tcpip_device::open(uint32_t ip, uint16_t port)
 
 	if (m_state != tcp_state::TCPS_CLOSED) return tcp_error::connection_already_exists;
 
-	m_passive = false;
+	m_connect_type == connect_type::active;
 	m_disconnect_type = disconnect_type::none;
 
 	m_remote_ip = ip;
@@ -868,7 +868,7 @@ tcpip_device::tcp_error tcpip_device::listen(uint16_t port)
 
 	if (m_state != tcp_state::TCPS_CLOSED) return tcp_error::connection_already_exists;
 
-	m_passive = true;
+	m_connect_type == connect_type::passive;
 	m_disconnect_type = disconnect_type::none;
 
 	m_remote_ip = 0;
@@ -1073,9 +1073,14 @@ void tcpip_device::disconnect(disconnect_type dt, tcp_state new_state)
 {
 	if (m_disconnect_type == disconnect_type::none) m_disconnect_type = dt;
 
+	if (new_state == tcp_state::TCPS_CLOSED)
+		m_connect_type = connect_type::none;
 
 	m_send_buffer_size = 0;
 	m_recv_buffer_size = 0;
+	m_recv_buffer_psh_offset = 0;
+	m_send_buffer_psh_offset = 0;
+	m_fragments.clear();
 
 	m_timer->reset();
 
@@ -1087,6 +1092,8 @@ void tcpip_device::force_close()
 	// set_state(tcp_state::TCPS_CLOSED);
 	// invalidate timers, etc.
 	m_state = tcp_state::TCPS_CLOSED;
+	m_connect_type = connect_type::none;
+
 	m_timer->reset();
 	m_send_buffer_size = 0;
 	m_recv_buffer_size = 0;

@@ -172,7 +172,8 @@ private:
 	uint32_t m_irs = 0; // initial recv seq number
 
 	bool m_fin_pending = false;
-	bool m_passive = false;
+
+	connect_type m_connect_type = connect_type::none;
 	disconnect_type m_disconnect_type = disconnect_type::none;
 
 	// bool m_syn_send = false;
