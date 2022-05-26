@@ -289,8 +289,6 @@ void tcpip_device::device_reset()
 	m_state = tcp_state::TCPS_CLOSED;
 
 	m_fin_pending = false;
-	m_fin_pending = false;
-	m_psh_pending = false;
 	m_passive = false;
 
 	m_keep_alive = 0;
@@ -322,6 +320,7 @@ void tcpip_device::device_reset()
 	m_recv_buffer_size = 0;
 	m_send_buffer_size = 0;
 	m_recv_buffer_psh_offset = 0;
+	m_send_buffer_psh_offset = 0;
 
 	set_receive_buffer_size(2048);
 	set_send_buffer_size(2048);
@@ -799,6 +798,7 @@ void tcpip_device::set_send_buffer_size(int capacity)
 			delete []m_send_buffer;
 			m_send_buffer = new uint8_t[capacity];
 			m_send_buffer_capacity = capacity;
+			memset(m_send_buffer, 0, capacity);
 		}
 	}
 }
@@ -812,6 +812,7 @@ void tcpip_device::set_receive_buffer_size(int capacity)
 			delete []m_recv_buffer;
 			m_recv_buffer = new uint8_t[capacity];
 			m_recv_buffer_capacity = capacity;
+			memset(m_recv_buffer, 0, capacity);
 		}
 	}
 }
@@ -904,7 +905,7 @@ tcpip_device::tcp_error tcpip_device::send(const void *buffer, unsigned length, 
 			if (length + m_send_buffer_size > m_send_buffer_capacity) return tcp_error::insufficient_resources;
 			memcpy(m_send_buffer + m_send_buffer_size, buffer, length);
 			m_send_buffer_size += length;
-			m_psh_pending |= push;
+			if (push) m_send_buffer_psh_offset = m_send_buffer_size;
 
 			if (urgent)
 				m_snd_up = m_snd_nxt - 1;
@@ -918,7 +919,7 @@ tcpip_device::tcp_error tcpip_device::send(const void *buffer, unsigned length, 
 			if (length + m_send_buffer_size > m_send_buffer_capacity) return tcp_error::insufficient_resources;
 			memcpy(m_send_buffer + m_send_buffer_size, buffer, length);
 			m_send_buffer_size += length;
-			m_psh_pending |= push;
+			if (push) m_send_buffer_psh_offset = m_send_buffer_size;
 
 			if (urgent)
 				m_snd_up = m_snd_nxt - 1;
@@ -973,8 +974,15 @@ tcpip_device::tcp_error tcpip_device::receive(void *buffer, unsigned &length, bo
 
 			if (length > 0)
 			{
+
+				int max_copy = std::accumulate(m_fragments.begin(), m_fragments.end(), m_recv_buffer_size - length,
+					[=](int n, const auto &f){
+						int offset = f.seg_seq + f.length - m_rcv_nxt;
+						return std::max(n, offset);
+				});
+
 				memcpy(buffer, m_recv_buffer, length);
-				memmove(m_recv_buffer, m_recv_buffer + length, m_recv_buffer_capacity - length);
+				memmove(m_recv_buffer, m_recv_buffer + length, max_copy);
 
 				// todo -- urg, push
 				if (push && length == m_recv_buffer_psh_offset)
@@ -982,8 +990,6 @@ tcpip_device::tcp_error tcpip_device::receive(void *buffer, unsigned &length, bo
 
 				m_recv_buffer_size -= length;
 				if (m_recv_buffer_psh_offset) m_recv_buffer_psh_offset -= length;
-
-				// update unordered segment queue...
 			}
 			else
 				length = 0;
@@ -1215,33 +1221,81 @@ void tcpip_device::send_segment(const uint8_t *src, int flags, uint32_t seq, uin
 	m_send_function(segment, SEGMENT_SIZE);
 }
 
-#if 0
-// m_recv_buffer_capacity
-// m_recv_buffer_offset;
-void tcpip_device(const uint8_t *data, int length, uint32_t seq)
+struct tcpip_device::fragment
 {
-	int offset = m_rcv_nxt - seq;
+	uint32_t seg_seq;
+	int length;
+	bool push;
+};
 
-	// write it into the buffer
-	memcpy(m_recv_buffer + m_recv_buffer_offset + offset, data, length);
+void tcpip_device::recv_data(const uint8_t *data, int length, uint32_t seg_seq, bool push)
+{
+	int offset = seg_seq - m_rcv_nxt;
 
-	if (seq == m_rcv_nxt)
+	if (offset < 0)
 	{
-		m_rcv_nxt += length;
-		auto q = m_rcv_queue;
-		while (q)
-		{
-			q->offset -= length;
-			q = q->next;
-		}
+		data -= offset;
+		seg_seq -= offset;
+		length += offset;
+		offset = 0;
 	}
-	else
-	{
-		auto q = new queued_data;
-		q->offset = offset;
-		q->length = length;
 
-		q->next = m_rcv_queue;
+	if (m_recv_buffer_size + offset + length > m_recv_buffer_capacity)
+	{
+		length = m_recv_buffer_capacity - m_recv_buffer_size - offset;
+		push = false;
+	}
+	if (length <= 0) return;
+
+	memcpy(m_recv_buffer + m_recv_buffer_size + offset, data, length);
+
+	if (offset > 0)
+	{
+		auto iter = std::find_if(m_fragments.begin(), m_fragments.end(), [=](const auto &f){
+			return seq(f.seg_seq) <= seg_seq;
+		});
+
+		if (iter != m_fragments.end() && iter->seg_seq == seg_seq && iter->length >= length)
+			return;
+
+
+		m_fragments.emplace(iter, fragment{seg_seq, length, push});
+		return;
+	}
+
+	m_rcv_nxt += length;
+	m_recv_buffer_size += length;
+	if (push) m_recv_buffer_psh_offset = m_recv_buffer_size;
+
+	while (!m_fragments.empty())
+	{
+		const auto &f = m_fragments.back();
+
+		seg_seq = f.seg_seq;
+		length = f.length;
+		push = f.push;
+
+		offset = seg_seq - m_rcv_nxt;
+
+		if (offset < 0)
+		{
+			seg_seq -= offset;
+			length += offset;
+			offset = 0;
+		}
+		if (length <= 0)
+		{
+			m_fragments.pop_back();
+			continue;
+		}
+		if (offset > 0) break;
+
+		m_rcv_nxt += length;
+		m_recv_buffer_size += length;
+
+		if (push) m_recv_buffer_psh_offset = m_recv_buffer_size;
+
+
+		m_fragments.pop_back();
 	}
 }
-#endif

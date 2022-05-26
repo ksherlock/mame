@@ -53,6 +53,12 @@ public:
 		rst,
 	};
 
+	enum class connect_type {
+		none,
+		active,
+		passive
+	};
+
 #if 0
 	enum class tcp_event {
 		state_change,
@@ -133,6 +139,8 @@ private:
 	void send_segment(const uint8_t *src, int flags, uint32_t seq, uint32_t ack);
 
 
+	void recv_data(const uint8_t *data, int length, uint32_t seg_seq, bool push);
+
 	tcp_state m_state = tcp_state::TCPS_CLOSED;
 	int m_param = 0;
 
@@ -164,7 +172,6 @@ private:
 	uint32_t m_irs = 0; // initial recv seq number
 
 	bool m_fin_pending = false;
-	bool m_psh_pending = false;
 	bool m_passive = false;
 	disconnect_type m_disconnect_type = disconnect_type::none;
 
@@ -179,7 +186,11 @@ private:
 
 	int m_send_buffer_capacity = 0;
 	int m_send_buffer_size = 0;
+	int m_send_buffer_psh_offset = 0;
 
+
+	struct fragment;
+	std::vector<fragment> m_fragments;
 
 	emu_timer *m_timer = nullptr;
 
