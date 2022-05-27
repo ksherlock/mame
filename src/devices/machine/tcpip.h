@@ -137,9 +137,11 @@ private:
 	void rst_closed_socket(const void *buffer, int flags, uint32_t ack, uint32_t seq_end);
 	void send_segment(int flags, uint32_t seq, uint32_t ack);
 	void send_segment(const uint8_t *src, int flags, uint32_t seq, uint32_t ack);
+	void send_data_segment(const uint8_t *data, int length, int flags, uint32_t seq, uint32_t ack);
 
 
 	void recv_data(const uint8_t *data, int length, uint32_t seg_seq, bool push);
+	void send_data(bool flush);
 
 	tcp_state m_state = tcp_state::TCPS_CLOSED;
 	int m_param = 0;

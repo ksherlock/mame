@@ -140,16 +140,6 @@ private:
 };
 
 
-struct queued_data
-{
-	queued_data *next = nullptr;
-	std::unique_ptr<uint8_t []> data = nullptr;
-	int flags = 0;
-	uint32_t seg_seq = 0;
-	uint32_t seg_len = 0;
-	uint32_t seg_up = 0;
-};
-
 static uint32_t read32(const uint8_t *p)
 {
 	return (p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3];
@@ -203,7 +193,13 @@ static void checksum(uint8_t *segment, int ip_length, int tcp_length)
 } // anonymous namespace
 
 
-
+// out-of order segments are stored in m_recv_buffer; m_fragments keeps their info.
+struct tcpip_device::fragment
+{
+	uint32_t seg_seq;
+	int length;
+	bool push;
+};
 
 
 
@@ -648,8 +644,18 @@ void tcpip_device::segment(const void *buffer, int length)
 
 				if (ack_valid_lt_le(m_snd_una, seg_ack, m_snd_nxt))
 				{
+					int delta = static_cast<int32_t>(seg_ack - m_snd_una);
+
 					m_snd_una = seg_ack;
-					// TODO -- update send queue, callback to notify data sent.
+					m_send_buffer_size -= delta;
+					if (m_send_buffer_psh_offset)
+					{
+						m_send_buffer_psh_offset -= delta;
+						if (m_send_buffer_psh_offset < 0) m_send_buffer_psh_offset = 0;
+					}
+					memmove(m_send_buffer, m_send_buffer + delta, m_send_buffer_size);
+
+					if (m_on_send_complete) m_on_send_complete();
 				}
 				if ((seq(seg_ack) <= m_snd_una)) return; // duplicate
 				if ((seq(seg_ack) > m_snd_nxt))
@@ -1132,6 +1138,61 @@ tcpip_device::tcp_error tcpip_device::abort()
 }
 
 
+void tcpip_device::send_data_segment(const uint8_t *data, int data_length, int flags, uint32_t seq, uint32_t ack)
+{
+	if (!m_send_function) return;
+
+	if (data_length == 0)
+	{
+		send_segment(flags, seq, ack);
+		return;
+	}
+
+	static const int HEADER_SIZE = 54;
+	const int SEGMENT_SIZE = data_length + HEADER_SIZE;
+	std::unique_ptr<uint8_t[]> segment(new uint8_t[SEGMENT_SIZE]);
+
+	uint8_t *ptr = segment.get();
+
+	// ethernet header
+	memcpy(ptr, m_remote_mac, 6);
+	memcpy(ptr + 6, m_local_mac, 6);
+	write16(ptr + 12, ETHERTYPE_IP);
+	ptr += 14;
+
+	// ip header
+	ptr[0] = 0x45; // ipv4, length = 5*4
+	ptr[1] = 0; // TOS
+	write16(ptr + 2, SEGMENT_SIZE - 14); // length
+	write16(ptr + 4, 0); // identification
+	ptr[6] = 0x40; // flags - don't fragment
+	ptr[7] = 0x00;
+	ptr[8] = m_ttl;
+	ptr[9] = IP_PROTOCOL_TCP;
+	write16(ptr + 10, 0); // checksum
+	write32(ptr + 12, m_local_ip);
+	write32(ptr + 16, m_remote_ip);
+	ptr += 20;
+
+	// tcp header
+	write16(ptr + 0 , m_local_port);
+	write16(ptr + 2, m_remote_port);
+	write32(ptr + 4, seq);
+	write32(ptr + 8, ack);
+	ptr[12] = 0x50; // 4 * 5 bytes
+	ptr[13] = flags;
+	write16(ptr + 14, m_snd_wnd);
+	write16(ptr + 16, 0); // checksum
+	write16(ptr + 18, 0); // urgent ptr
+
+	ptr += 20;
+	memcpy(ptr, data, data_length);
+
+
+	checksum(segment.get() + 14, 20, 20 + data_length);
+
+	m_send_function(segment.get(), SEGMENT_SIZE);
+}
 
 void tcpip_device::send_segment(int flags, uint32_t seq, uint32_t ack)
 {
@@ -1228,12 +1289,8 @@ void tcpip_device::send_segment(const uint8_t *src, int flags, uint32_t seq, uin
 	m_send_function(segment, SEGMENT_SIZE);
 }
 
-struct tcpip_device::fragment
-{
-	uint32_t seg_seq;
-	int length;
-	bool push;
-};
+
+
 
 void tcpip_device::recv_data(const uint8_t *data, int length, uint32_t seg_seq, bool push)
 {
@@ -1304,5 +1361,34 @@ void tcpip_device::recv_data(const uint8_t *data, int length, uint32_t seg_seq, 
 
 
 		m_fragments.pop_back();
+	}
+}
+
+void tcpip_device::send_data(bool flush)
+{
+	// m_send_buffer_psh_offset can't be reset until acked.
+	int push_offset = m_send_buffer_psh_offset;
+	int offset = 0;
+
+	while (m_snd_wnd && m_send_buffer_size)
+	{
+
+		if (!flush && (push_offset == 0 || m_send_buffer_size < m_mss))
+			break;
+
+		int flags = TCP_ACK;
+		int length = m_send_buffer_size;
+		if (length > m_mss) length = m_mss;
+		if (push_offset && length > push_offset)
+		{
+			length = push_offset;
+			push_offset = 0;
+			flags |= TCP_PSH;
+		}
+
+		send_data_segment(m_send_buffer + offset, length, flags, m_snd_nxt + offset, m_rcv_nxt);
+		offset += length;
+		m_snd_wnd -= length;
+		m_snd_nxt += length;
 	}
 }
