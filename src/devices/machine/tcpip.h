@@ -59,14 +59,11 @@ public:
 		passive
 	};
 
-#if 0
 	enum class tcp_event {
 		state_change,
-		fin_received,
-		rst_received,
 		send_complete,
+		receive_ready,
 	};
-#endif
 
 	// TCP user commands.
 	tcp_error open(uint32_t ip, uint16_t port);
@@ -74,7 +71,7 @@ public:
 
 	tcp_error close();
 	tcp_error send(const void *buffer, unsigned length, bool push = false, bool urgent = false);
-	tcp_error receive(void *buffer, unsigned &length, bool *urgent = nullptr, bool *push = nullptr); // should indicate back urgent + push flags
+	tcp_error receive(void *buffer, int &length, bool *urgent = nullptr, bool *push = nullptr); // should indicate back urgent + push flags
 	tcp_error abort();
 
 	tcp_state status() { return m_state; }
@@ -111,8 +108,20 @@ public:
 
 	// need amt of recv data, amt of pending send data.
 
-	void set_on_state_change(std::function<void(tcp_state, tcp_state)> fx) { m_on_state_change = fx; }
-	void set_send_function(std::function<void(void *, int)> fx) { m_send_function = fx; }
+	void set_on_state_change(std::function<void(tcp_state, tcp_state)> fx) { m_on_state_change = std::move(fx); }
+	void set_send_function(std::function<void(void *, int)> fx) { m_send_function = std::move(fx); }
+	void set_event_function(std::function<void(tcp_event)> fx) { m_event_function = std::move(fx); }
+
+
+	int receive_count() const // amount of data that can be read
+	{ return m_recv_buffer_size; }
+	int send_count() const // amount of data that can be written
+	{ return m_send_buffer_capacity - m_send_buffer_size; }
+
+	bool receive_buffer_empty() const
+	{ return m_recv_buffer_size == 0; }
+	bool send_buffer_empty() const
+	{ return m_send_buffer_size == 0; }
 
 
 protected:
@@ -202,6 +211,7 @@ private:
 	std::function<void(tcp_state, tcp_state)> m_on_state_change;
 	std::function<void()> m_on_data_available;
 	std::function<void()> m_on_send_complete;
+	std::function<void(tcp_event)> m_event_function;
 
 	std::function<void(void *buffer, int size)> m_send_function;
 

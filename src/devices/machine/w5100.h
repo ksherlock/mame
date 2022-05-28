@@ -70,9 +70,10 @@ private:
 	bool find_mac(int sn);
 	void send_arp_request(uint32_t ip);
 
-	void handle_arp_request(uint8_t *buffer, int length);
-	void handle_arp_reply(uint8_t *buffer, int length);
-	void handle_ping_reply(uint8_t *buffer, int length);
+	void handle_arp_request(const uint8_t *buffer, int length);
+	void handle_arp_reply(const uint8_t *buffer, int length);
+	void handle_icmp_reply(uint8_t *buffer, int length);
+	void handle_icmp_unreachable(uint8_t *buffer, int length);
 
 	void receive(int sn, const uint8_t *buffer, int length);
 
@@ -82,6 +83,10 @@ private:
 	void build_udp_header(int sn, uint8_t *buffer, int length);
 
 	void tcp_state_change(int sn, tcpip_device::tcp_state new_state, tcpip_device::tcp_state old_state);
+	// void tcp_event(int sn, tcpip_device::tcp_event event);
+	void tcp_receive(int sn);
+	void tcp_send_complete(int sn);
+	void tcp_receive_ready(int sn);
 
 	void dump_bytes(const uint8_t *buffer, int length);
 

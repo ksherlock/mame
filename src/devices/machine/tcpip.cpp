@@ -655,7 +655,8 @@ void tcpip_device::segment(const void *buffer, int length)
 					}
 					memmove(m_send_buffer, m_send_buffer + delta, m_send_buffer_size);
 
-					if (m_on_send_complete) m_on_send_complete();
+					//if (m_on_send_complete) m_on_send_complete();
+					if (m_event_function) m_event_function(tcp_event::send_complete);
 				}
 				if ((seq(seg_ack) <= m_snd_una)) return; // duplicate
 				if ((seq(seg_ack) > m_snd_nxt))
@@ -948,23 +949,32 @@ tcpip_device::tcp_error tcpip_device::send(const void *buffer, unsigned length, 
 
 // std::tuple<tcp_error, int, bool, bool>?
 // returns error, read-length, push, urgent
-tcpip_device::tcp_error tcpip_device::receive(void *buffer, unsigned &length, bool *push, bool *urgent)
+tcpip_device::tcp_error tcpip_device::receive(void *buffer, int &length, bool *push, bool *urgent)
 {
 	// pp 56
 	int max = 0;
 
+	if (push) *push = false;
+	if (urgent) *urgent = false;
+
 	switch (m_state)
 	{
 		case tcp_state::TCPS_CLOSED:
+			length = 0;
 			return tcp_error::connection_does_not_exist;
 
 		case tcp_state::TCPS_LISTEN:
 		case tcp_state::TCPS_SYN_SENT:
 		case tcp_state::TCPS_SYN_RECEIVED:
+			length = 0;
 			return tcp_error::insufficient_resources;
 
 		case tcp_state::TCPS_CLOSE_WAIT:
-			if (!m_recv_buffer_size) return tcp_error::connection_closing;
+			if (!m_recv_buffer_size)
+			{
+				length = 0;
+				return tcp_error::connection_closing;
+			}
 			/* drop through */
 
 		case tcp_state::TCPS_ESTABLISHED:
@@ -974,13 +984,11 @@ tcpip_device::tcp_error tcpip_device::receive(void *buffer, unsigned &length, bo
 			max = m_recv_buffer_size;
 			if (m_recv_buffer_psh_offset) max = std::min(max, m_recv_buffer_psh_offset);
 
-			if (push) *push = false;
-			if (urgent) *urgent = false;
-			length = std::min(length, static_cast<unsigned>(max));
+
+			length = std::min(length, max);
 
 			if (length > 0)
 			{
-
 				int max_copy = std::accumulate(m_fragments.begin(), m_fragments.end(), m_recv_buffer_size - length,
 					[=](int n, const auto &f){
 						int offset = f.seg_seq + f.length - m_rcv_nxt;
@@ -1005,6 +1013,7 @@ tcpip_device::tcp_error tcpip_device::receive(void *buffer, unsigned &length, bo
 		case tcp_state::TCPS_CLOSING:
 		case tcp_state::TCPS_LAST_ACK:
 		case tcp_state::TCPS_TIME_WAIT:
+			length = 0;
 			return tcp_error::connection_closing;
 	}
 
@@ -1295,6 +1304,7 @@ void tcpip_device::send_segment(const uint8_t *src, int flags, uint32_t seq, uin
 void tcpip_device::recv_data(const uint8_t *data, int length, uint32_t seg_seq, bool push)
 {
 	int offset = seg_seq - m_rcv_nxt;
+	int total = length;
 
 	if (offset < 0)
 	{
@@ -1356,12 +1366,14 @@ void tcpip_device::recv_data(const uint8_t *data, int length, uint32_t seg_seq, 
 
 		m_rcv_nxt += length;
 		m_recv_buffer_size += length;
+		total += length;
 
 		if (push) m_recv_buffer_psh_offset = m_recv_buffer_size;
 
 
 		m_fragments.pop_back();
 	}
+	if (m_event_function) m_event_function(tcp_event::receive_ready);
 }
 
 void tcpip_device::send_data(bool flush)

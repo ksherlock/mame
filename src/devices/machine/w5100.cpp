@@ -5,6 +5,8 @@
 /*
   WIZnet W5100
 
+  Used in: Uthernet II (Apple II), DragonCart II (Atari 8-bit), Spectranet (ZX Spectrum)
+
   Based on:
   W5100, W5100S, W5200, W5500 datasheets
   WIZnet ioLibrary Driver (https://github.com/Wiznet/ioLibrary_Driver)
@@ -24,8 +26,7 @@
 /*
 TODO:
 - UDP multicast - igmp messages
-- ICMP unreachable port
-- W5100s support?
+- full W5100s support
 */
 
 #include "emu.h"
@@ -37,11 +38,16 @@ TODO:
 #define LOG_FILTER  (1U << 2)
 #define LOG_PACKETS (1U << 3)
 #define LOG_ARP     (1U << 4)
-#define LOG_TCP     (1U << 5)
 
-#define VERBOSE (LOG_GENERAL|LOG_COMMAND|LOG_FILTER|LOG_PACKETS|LOG_ARP|LOG_TCP)
+#define VERBOSE (LOG_GENERAL|LOG_COMMAND|LOG_FILTER|LOG_PACKETS|LOG_ARP)
 #include "logmacro.h"
 
+
+
+using disconnect_type = tcpip_device::disconnect_type;
+using tcp_error = tcpip_device::tcp_error;
+using tcp_event = tcpip_device::tcp_event;
+using tcp_state = tcpip_device::tcp_state;
 
 /* indirect mode addresses */
 enum {
@@ -388,31 +394,16 @@ enum {
 
 
 
-/* MISC IP, ARP, etc constants */
-enum {
-	ETHERTYPE_IP = 0x0800,
-	ETHERTYPE_ARP = 0x0806,
-	ETHERTYPE_IPV6 = 0x86dd,
-
-	ARP_OP_REQUEST = 0x01, // rfc 826
-	ARP_OP_REPLY = 0x02,
-	ARP_HARDWARE_ETHERNET = 1,
-
-	ICMP_ECHO_REPLY = 0x00, // rfc 792
-	ICMP_DESTINATION_UNREACHABLE = 0x03,
-	ICMP_ECHO_REQUEST = 0x8,
-
-	IP_ICMP = 1,
-	IP_IGMP = 2,
-	IP_TCP = 6,
-	IP_UDP = 17,
-
-};
+/* IP, ARP, etc offsets and constants */
 
 enum {
 	o_ETHERNET_DEST = 0,
 	o_ETHERNET_SRC = 6,
 	o_ETHERNET_TYPE = 12,
+
+	ETHERNET_TYPE_IP = 0x0800,
+	ETHERNET_TYPE_ARP = 0x0806,
+	ETHERNET_TYPE_IPV6 = 0x86dd,
 };
 
 enum {
@@ -426,6 +417,11 @@ enum {
 	o_IP_CHECKSUM = 10,
 	o_IP_SRC_ADDRESS = 12,
 	o_IP_DEST_ADDRESS = 16,
+
+	IP_ICMP = 1,
+	IP_IGMP = 2,
+	IP_TCP = 6,
+	IP_UDP = 17,
 };
 
 enum {
@@ -433,7 +429,6 @@ enum {
 	o_UDP_DEST_PORT = 2,
 	o_UDP_LENGTH = 4,
 	o_UDP_CHECKSUM = 6,
-
 };
 
 
@@ -441,7 +436,11 @@ enum {
 enum {
 	o_ICMP_TYPE = 0,
 	o_ICMP_CODE = 1,
-	o_ICMP_CHECKSUM = 2
+	o_ICMP_CHECKSUM = 2,
+
+	ICMP_ECHO_REPLY = 0x00, // rfc 792
+	ICMP_DESTINATION_UNREACHABLE = 0x03,
+	ICMP_ECHO_REQUEST = 0x8,
 };
 
 enum {
@@ -462,6 +461,12 @@ enum {
 	o_ARP_SPA = 14,
 	o_ARP_THA = 18,
 	o_ARP_TPA = 24,
+
+
+	ARP_OPCODE_REQUEST = 0x01, // rfc 826
+	ARP_OPCODE_REPLY = 0x02,
+	ARP_HTYPE_ETHERNET = 1,
+
 };
 
 
@@ -475,7 +480,7 @@ enum {
 */
 
 
-static uint8_t ETH_BROADCAST[6] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
+static uint8_t ETHERNET_BROADCAST[6] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
 
 
 
@@ -504,6 +509,68 @@ static void write16(uint8_t *p, uint16_t x)
 	p[1] = x >> 0;
 }
 
+
+static bool verify_arp(const uint8_t *buffer, int length)
+{
+	const uint8_t *arp = buffer + 14;
+	if (length < 14 + 28) return false;
+	if (read16(buffer + o_ETHERNET_TYPE) != ETHERNET_TYPE_ARP) return false;
+	if (read16(arp + o_ARP_HTYPE) != ARP_HTYPE_ETHERNET) return false;
+	if (arp[o_ARP_HLEN] != 6 || arp[o_ARP_PLEN] != 4) return false;
+	return true;
+}
+
+/* returns ip header length if ok */
+static int verify_ip(const uint8_t *buffer, int length)
+{
+	if (length < 14 + 20) return false;
+	if (read16(buffer + o_ETHERNET_TYPE) != ETHERNET_TYPE_IP) return false;
+
+	const uint8_t *ip = buffer + 14;
+	length -= 14;
+
+	int ihl = (ip[o_IP_IHL] & 0x0f) << 2;
+	if (ihl < 20) return false;
+
+	if (util::internet_checksum_creator::simple(ip, ihl)) return false;
+
+	int proto = ip[o_IP_PROTOCOL];
+
+	const uint8_t *data = ip + ihl;
+	int ip_length = read16(ip + o_IP_LENGTH);
+
+	if (length < ip_length) return false;
+
+	length = ip_length - ihl;	
+
+	if (proto == IP_ICMP || proto == IP_IGMP)
+	{
+		if (!util::internet_checksum_creator::simple(data, length)) return false;
+	}
+	else if (proto == IP_UDP)
+	{
+		if (length < read16(data + o_UDP_LENGTH)) return false;
+
+		uint16_t crc = read16(data + o_UDP_CHECKSUM);
+		if (crc)
+		{
+			uint8_t pheader[12];
+			memcpy(pheader + 0, ip + o_IP_SRC_ADDRESS, 4);
+			memcpy(pheader + 4, ip + o_IP_DEST_ADDRESS, 4);
+			write16(pheader + 8, IP_UDP);
+			write16(pheader + 10, length);
+
+			util::internet_checksum_creator cr;
+			cr.append(pheader, sizeof(pheader));
+			cr.append(data, length);
+			uint16_t xcrc = cr.finish();
+			if (xcrc == 0) xcrc = 0xffff;
+			if (crc != xcrc) return false;
+		}
+	}
+
+	return ihl;
+}
 
 
 w5100_device::w5100_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, dev_type device_type)
@@ -540,17 +607,30 @@ void w5100_device::device_start()
 
 void w5100_device::device_add_mconfig(machine_config &config)
 {
-	using tcp_state = tcpip_device::tcp_state;
-
 	for (int sn = 0; sn < 5; ++sn)
 	{
-		TCPIP(config, m_tcp[sn], clock());
-		m_tcp[sn]->set_param(sn);
-		m_tcp[sn]->set_on_state_change([&](tcp_state new_state, tcp_state old_state){
+		auto &tcp = m_tcp[sn];
+		TCPIP(config, tcp, clock());
+		tcp->set_param(sn);
+		if (sn == 4) continue;
+
+		tcp->set_on_state_change([&](tcp_state new_state, tcp_state old_state){
 			tcp_state_change(sn, new_state, old_state);
 		});
-		m_tcp[sn]->set_send_function([this](void *buffer, int length){
+		tcp->set_send_function([this](void *buffer, int length){
 			send(static_cast<u8 *>(buffer), length);
+		});
+		tcp->set_event_function([this, sn](tcp_event event){
+			switch(event)
+			{
+				case tcp_event::receive_ready:
+					tcp_receive(sn);
+					break;
+				case tcp_event::send_complete:
+					tcp_send_complete(sn);
+					break;
+				default: break;
+			}
 		});
 	}
 }
@@ -1215,14 +1295,9 @@ static void copy_out(uint8_t *dest, const uint8_t *src, int length, int dest_off
 
 }
 
-// TODO -- loopback if sending to own ip address?
 void w5100_device::socket_send(int sn)
 {
-	static const int BUFFER_SIZE = 1514;
-	uint8_t buffer[BUFFER_SIZE];
-
 	uint8_t *socket = m_memory + Sn_BASE + (Sn_SIZE * sn);
-	// uint8_t sr = socket[Sn_SR];
 	unsigned proto = socket[Sn_MR] & 0x0f;
 
 
@@ -1232,8 +1307,14 @@ void w5100_device::socket_send(int sn)
 	if (proto == Sn_MR_UDP || proto == Sn_MR_IPRAW)
 	{
 		if (!find_mac(sn)) return;
+		socket_send_mac(sn);
 	}
 
+	if (proto == Sn_MR_MACRAW)
+	{
+		socket_send_mac(sn);
+		return;
+	}
 
 	int tx_buffer_offset = m_sockets[sn].tx_buffer_offset;
 	int tx_buffer_size = m_sockets[sn].tx_buffer_size;
@@ -1252,71 +1333,64 @@ void w5100_device::socket_send(int sn)
 
 	if (proto == Sn_MR_TCP)
 	{
-		// no updates until ack 
-		copy_in(buffer, m_memory + tx_buffer_offset, size, read_ptr, tx_buffer_size);
-		m_tcp[sn]->send(buffer, size);
+		bool push = m_device_type == dev_type::W5100S ? socket[Sn_MR2] & Sn_MR2_BRDB : false; 
+		if (read_ptr + size > tx_buffer_size)
+		{
+			int len = tx_buffer_size - read_ptr;
+			m_tcp[sn]->send(m_memory + tx_buffer_offset + read_ptr, len, false, false);
+			read_ptr = 0;
+			size -= len;
+		}
+		m_tcp[sn]->send(m_memory + tx_buffer_offset + read_ptr, size, push, false);
 		return;
 	}
 
 
+}
+
+void w5100_device::socket_send_mac(int sn)
+{
+
+	static const int BUFFER_SIZE = 1514;
+	uint8_t buffer[BUFFER_SIZE];
+
+	uint8_t *socket = m_memory + Sn_BASE + (Sn_SIZE * sn);
+	// uint8_t sr = socket[Sn_SR];
+	unsigned proto = socket[Sn_MR] & 0x0f;
+
+
+	int tx_buffer_offset = m_sockets[sn].tx_buffer_offset;
+	int tx_buffer_size = m_sockets[sn].tx_buffer_size;
+
+	uint16_t read_ptr = (socket[Sn_TX_RD0] << 8) |  socket[Sn_TX_RD1];
+	uint16_t write_ptr = (socket[Sn_TX_WR0] << 8) |  socket[Sn_TX_WR1];
+
+	read_ptr &= (tx_buffer_size - 1);
+	write_ptr &= (tx_buffer_size - 1);
+
+
+	int size = write_ptr - read_ptr;
+	if (size < 0) size += tx_buffer_size;
 
 	int header_size = proto_header_size(proto);
 	int mss = 1514;
 
-	switch(proto)
-	{
-		case Sn_MR_UDP:
-		case Sn_MR_TCP:
-			// n.b. - this mss does not include the ethernet header (14 bytes)
-			mss = (socket[Sn_MSSR0] << 8) | socket[Sn_MSSR1];
-			mss += 14;
-			break;
-	}
-	mss = std::min(mss, BUFFER_SIZE);
-
-
-	/* for MACRAW/IPRAW  limit to 1514 bytes (w/ header)*/
-
-
-	// ipraw, udp, tcp - add headers.
-
-	if (proto == Sn_MR_MACRAW || proto == Sn_MR_IPRAW)
-	{
-
-		// MACRAW/IPRAW truncate if too big
-
-		int msize = std::min(size, mss - header_size);
-
-		memset(buffer, 0, header_size);
-		copy_in(buffer + header_size, m_memory + tx_buffer_offset, msize, read_ptr, tx_buffer_size);
-
-
-		msize += header_size;
-		if (proto == Sn_MR_IPRAW)
-			build_ipraw_header(sn, buffer, msize);
-
-		dump_bytes(buffer, msize);
-		send(buffer, msize);
-		socket[Sn_TX_RD0] = write_ptr >> 8;
-		socket[Sn_TX_RD1] = write_ptr;
-		socket[Sn_TX_FSR0] = tx_buffer_size >> 8;
-		socket[Sn_TX_FSR1] = tx_buffer_size;
-		socket[Sn_IR] |= Sn_IR_SEND_OK;
-		update_ethernet_irq();
-		return;
-	}
-
-	// for UDP, break up large packets...
 	if (proto == Sn_MR_UDP)
 	{
+		mss = std::min(static_cast<int>(read16(socket + Sn_MSSR0)), 1472);
+		if (mss) mss += header_size;
+		else mss = BUFFER_SIZE;
+	}
+
+
+	if (proto == Sn_MR_UDP)
+	{
+		// UDP needs to be split into multiple chunks 
 		while (size)
 		{
 			int msize = std::min(size, mss - header_size);
-
 			memset(buffer, 0, header_size);
 			copy_in(buffer + header_size, m_memory + tx_buffer_offset, msize, read_ptr, tx_buffer_size);
-			msize += header_size;
-
 			build_udp_header(sn, buffer, msize);
 			dump_bytes(buffer, msize);
 			send(buffer, msize);
@@ -1324,22 +1398,31 @@ void w5100_device::socket_send(int sn)
 			size -= msize;
 		}
 
-		socket[Sn_TX_RD0] = write_ptr >> 8;
-		socket[Sn_TX_RD1] = write_ptr;
-		socket[Sn_TX_FSR0] = tx_buffer_size >> 8;
-		socket[Sn_TX_FSR1] = tx_buffer_size;
-		socket[Sn_IR] |= Sn_IR_SEND_OK;
-		update_ethernet_irq();
-		return;
+	}
+	else if (proto == Sn_MR_MACRAW || proto == Sn_MR_IPRAW)
+	{
+		// MACRAW/IPRAW truncate if too big
+
+		int msize = std::min(size, mss - header_size);
+
+		memset(buffer, 0, header_size);
+		copy_in(buffer + header_size, m_memory + tx_buffer_offset, msize, read_ptr, tx_buffer_size);
+
+		msize += header_size;
+
+		if (proto == Sn_MR_IPRAW)
+			build_ipraw_header(sn, buffer, msize);
+
+		dump_bytes(buffer, msize);
+		send(buffer, msize);
 	}
 
-
-
-}
-
-void w5100_device::socket_send_mac(int sock)
-{
-	// same as send but don't perform ARP lookup. UDP/IPRAW only.
+	socket[Sn_TX_RD0] = write_ptr >> 8;
+	socket[Sn_TX_RD1] = write_ptr;
+	socket[Sn_TX_FSR0] = tx_buffer_size >> 8;
+	socket[Sn_TX_FSR1] = tx_buffer_size;
+	socket[Sn_IR] |= Sn_IR_SEND_OK;
+	update_ethernet_irq();
 }
 
 void w5100_device::socket_send_keep(int sn)
@@ -1434,7 +1517,11 @@ void w5100_device::socket_recv(int sn)
 	// update RSR and trigger a RECV interrupt if data still pending.
 	socket[Sn_RX_RSR0] = size >> 8;
 	socket[Sn_RX_RSR1] = size & 0xff;
-	if (size)
+	if ((socket[Sn_MR] & 0x0f) == Sn_MR_TCP)
+	{
+		tcp_receive(sn);
+	}
+	else if (size)
 	{
 		socket[Sn_IR] |= Sn_IR_RECV;
 		update_ethernet_irq();
@@ -1466,7 +1553,8 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 	bool is_icmp = false;
 	int ethertype = -1; // 0x0806 = arp, 0x0800 = ip */
 	int ip_proto = -1;
-	int ip_port = 0;
+	int udp_port = 0;
+	int ip_header_length = 0;
 	bool macraw = m_memory[Sn_SR + Sn_BASE] == Sn_SR_MACRAW;
 
 	int mr2 = m_device_type == dev_type::W5100S ? m_memory[MR2] : 0;
@@ -1478,12 +1566,12 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 
 	if (length < 14) return;
 
-	ethertype = (buffer[12] << 8) | buffer[13];
+	ethertype = read16(buffer + o_ETHERNET_TYPE);
 
 
 	if (buffer[0] & 0x01)
 	{
-		if (!memcmp(buffer, ETH_BROADCAST, 6)) is_broadcast = true;
+		if (!memcmp(buffer + o_ETHERNET_DEST, ETHERNET_BROADCAST, 6)) is_broadcast = true;
 		else is_multicast = true;
 	}
 	if (!memcmp(buffer, &m_memory[SHAR0], 6)) is_unicast = true;
@@ -1499,36 +1587,45 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 				int mr2 = m_memory[Sn_MR2 + Sn_BASE];
 				if ((mr2 & Sn_MR2_MBBLK) && is_broadcast) return;
 				if ((mr2 & Sn_MR2_MMBLK) && is_multicast) return;
-				if ((mr2 & Sn_MR2_IPV6BLK) && ethertype == ETHERTYPE_IPV6) return;
+				if ((mr2 & Sn_MR2_IPV6BLK) && ethertype == ETHERNET_TYPE_IPV6) return;
 			}
 			receive(0, buffer, length);
 		}
 		return;
 	}
 
-	if (ethertype == ETHERTYPE_ARP)
+	if (ethertype == ETHERNET_TYPE_ARP && verify_arp(buffer, length))
 	{
 		if (length < 16) return;
-		int arp_op = (buffer[o_ARP_OPCODE] << 8) | buffer[o_ARP_OPCODE +1];
+		uint8_t *arp = buffer + 14;
+		int arp_op = read16(arp + o_ARP_OPCODE);
 
-		if (arp_op == ARP_OP_REPLY)
+		if (arp_op == ARP_OPCODE_REPLY)
 		{
 			handle_arp_reply(buffer, length);
 		}
-		if (arp_op == ARP_OP_REQUEST)
+		if (arp_op == ARP_OPCODE_REQUEST)
 		{
 			handle_arp_request(buffer, length);
 		}
 		if (!macraw) return;
 	}
-	if (ethertype == ETHERTYPE_IP)
+	if (ethertype == ETHERNET_TYPE_IP)
 	{
-		if (length < 34) return;
-		ip_proto = buffer[o_IP_PROTOCOL];
-		if (ip_proto == IP_ICMP) is_icmp = true;
-		if (ip_proto == IP_TCP) is_tcp = true;
-		if (ip_proto == IP_UDP) is_udp = true;
-		if (is_udp || is_tcp) ip_port = (buffer[o_UDP_DEST_PORT] << 8) | buffer[o_UDP_DEST_PORT + 1];
+		ip_header_length = verify_ip(buffer, length);
+		if (ip_header_length)
+		{
+			uint8_t *ip = buffer + 14;
+			uint8_t *data = ip + ip_header_length;
+			ip_proto = ip[o_IP_PROTOCOL];
+			if (ip_proto == IP_ICMP) is_icmp = true;
+			if (ip_proto == IP_TCP) is_tcp = true;
+			if (ip_proto == IP_UDP)
+			{
+				is_udp = true;
+				udp_port = read16(data + o_UDP_DEST_PORT);
+			}
+		}
 
 	}
 
@@ -1541,7 +1638,7 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 		int sr = socket[Sn_SR];
 		int proto = socket[Sn_MR] & 0xff;
 
-		int port = (socket[Sn_PORT0] << 8) | socket[Sn_PORT1];
+		int port = read16(socket + Sn_PORT0);
 
 		if (sr == Sn_SR_INIT || sr == Sn_SR_CLOSED) continue;
 
@@ -1554,7 +1651,7 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 		if (proto == Sn_MR_UDP)
 		{
 			handle_udp = true;
-			if (is_udp && ip_port == port)
+			if (is_udp && udp_port == port)
 			{
 				receive(sn, buffer, length);
 				return;
@@ -1575,16 +1672,20 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 
 	if (is_icmp)
 	{
-		int icmp_type = buffer[o_ICMP_TYPE];
+		uint8_t *icmp = buffer + 14 + ip_header_length;
+		int icmp_type = icmp[o_ICMP_TYPE];
 
-		if (icmp_type == ICMP_DESTINATION_UNREACHABLE && buffer[51] == IP_UDP)
+		if (icmp_type == ICMP_DESTINATION_UNREACHABLE && icmp[o_ICMP_CODE] == 3 && icmp[8 + o_IP_PROTOCOL] == IP_UDP && is_unicast)
 		{
 			// an ICMP destination unreachable message from a UDP will
 			// generate an unreachable interrupt and set unreachable ip/port registers.
 
-			/* check for an open udp port matching the source/destination port? */
-			memcpy(m_memory + UIPR0, buffer + 58, 4); 
-			memcpy(m_memory + UPORT0, buffer + 64, 2);
+			if (length < 14 + ip_header_length + 8 + 20) return;
+			int ihl = (icmp[8 + o_IP_IHL] & 0x0f) << 2;
+			if (length < 14 + ip_header_length + ihl + 8) return;
+
+			memcpy(m_memory + UIPR0, icmp + 8 + o_IP_DEST_ADDRESS, 4); 
+			memcpy(m_memory + UPORT0, icmp + 8 + ihl + o_UDP_DEST_PORT, 2);
 			m_memory[IR] | IR_UNREACH;
 			update_ethernet_irq();
 		}
@@ -1592,22 +1693,21 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 		// respond to ICMP ping
 		if (icmp_type == ICMP_ECHO_REQUEST && (m_memory[MR] & MR_PB) == 0)
 		{
-			handle_ping_reply(buffer, length);
+			handle_icmp_reply(buffer, length);
 		}
 	}
 
 	if (is_udp && (handle_udp || !macraw))
 	{
-		if (is_unicast)
+		if (is_unicast && !(mr2 & MR2_UDPURB))
 		{
-			if (mr2 & MR2_UDPURB) return;
-			// generate ICMP destination unreachable.
+			handle_icmp_unreachable(buffer, length);
 		}
 		return;
 	}
 	if (is_tcp && (handle_tcp || !macraw))
 	{
-		if (is_unicast)
+		if (is_unicast && !(mr2 & MR2_NOTCPRST))
 		{
 			m_tcp[4]->segment(buffer, length); // socket 5 is always closed, will RST.
 		}
@@ -1622,7 +1722,7 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 			int mr2 = m_memory[Sn_MR2 + Sn_BASE];
 			if ((mr2 & Sn_MR2_MBBLK) && is_broadcast) return;
 			if ((mr2 & Sn_MR2_MMBLK) && is_multicast) return;
-			if ((mr2 & Sn_MR2_IPV6BLK) && ethertype == ETHERTYPE_IPV6) return;
+			if ((mr2 & Sn_MR2_IPV6BLK) && ethertype == ETHERNET_TYPE_IPV6) return;
 		}
 		receive(0, buffer, length);
 	}
@@ -1648,6 +1748,7 @@ void w5100_device::receive(int sn, const uint8_t *buffer, int length)
 
 	int offset = 0;
 	int header_size = 0;
+	int ihl = 0;
 
 	int rx_buffer_offset = m_sockets[sn].rx_buffer_offset;
 	int rx_buffer_size = m_sockets[sn].rx_buffer_size;
@@ -1678,11 +1779,12 @@ void w5100_device::receive(int sn, const uint8_t *buffer, int length)
 			break;
 
 		case Sn_MR_IPRAW:
-			offset = 0x22;
-			length -= offset;
+			ihl = (buffer[14 + o_IP_IHL] & 0x0f) << 2;
+			offset = ihl + 14;
+			length = read16(buffer + 14 + o_IP_LENGTH) - ihl;
 
 			// header: { uint32_t foreign_ip, uint16_t size }
-			memcpy(header + 0, buffer + o_IP_SRC_ADDRESS, 4);
+			memcpy(header + 0, buffer + 14 + o_IP_SRC_ADDRESS, 4);
 
 			header[4] = length >> 8;
 			header[5] = length;
@@ -1691,12 +1793,14 @@ void w5100_device::receive(int sn, const uint8_t *buffer, int length)
 			break;
 
 		case Sn_MR_UDP:
-			offset = 0x30;
-			length -= offset;
+
+			ihl = (buffer[14 + o_IP_IHL] & 0x0f) << 2;
+			offset = ihl + 14 + 8;
+			length = read16(buffer + 14 + ihl + o_UDP_LENGTH) - 8;
 
 			// header { uint32_t foreign_ip, uint16_t foreign_port, uint16_t size }
-			memcpy(header + 0, buffer + o_IP_SRC_ADDRESS, 4);
-			memcpy(header + 4, buffer + o_UDP_SRC_PORT, 2);
+			memcpy(header + 0, buffer + 14 + o_IP_SRC_ADDRESS, 4);
+			memcpy(header + 4, buffer + 14 + ihl + o_UDP_SRC_PORT, 2);
 
 			header[6] = length >> 8;
 			header[7] = length;
@@ -1773,29 +1877,11 @@ bool w5100_device::find_mac(int sn)
 	if (dest == 0xffffffff || dest == (ip | ~subnet))
 	{
 		/* broadcast ip address */
-		memcpy(&socket[Sn_DHAR0], ETH_BROADCAST, 6);
+		memcpy(&socket[Sn_DHAR0], ETHERNET_BROADCAST, 6);
 		m_sockets[sn].arp_ip_address = dest;
 		m_sockets[sn].arp_ok = true;
 		return true;
 	}
-
-#if 0
-	// multi-cast
-	// some documenation states caller should set up DHAR, some sample
-	// code doesn't do that.
-	if ((socket[Sn_MR] & 0x8f) == (Sn_MR_UDP | Sn_MR_MULT))
-	{
-		socket[Sn_DHAR0] = 0x01;
-		socket[Sn_DHAR1] = 0x00;
-		socket[Sn_DHAR2] = 0x5e;
-		socket[Sn_DHAR3] = socket[Sn_DIPR1] & 0x7f;
-		socket[Sn_DHAR4] = socket[Sn_DIPR2];
-		socket[Sn_DHAR5] = socket[Sn_DIPR3];
-		m_sockets[sn].arp_ip_address = dest;
-		m_sockets[sn].arp_ok = true;
-		return true;
-	}
-#endif
 
 	if ((dest & subnet) != (ip & subnet))
 	{
@@ -1821,7 +1907,7 @@ bool w5100_device::find_mac(int sn)
 }
 
 
-void w5100_device::handle_arp_reply(uint8_t *buffer, int length)
+void w5100_device::handle_arp_reply(const uint8_t *buffer, int length)
 {
 	/* if this is an ARP response, possibly update all the Sn_SR_ARP */
 	/* keep a separate mac for the gateway instead of re-checking every time? */
@@ -1830,7 +1916,9 @@ void w5100_device::handle_arp_reply(uint8_t *buffer, int length)
 	/* if another device claims our MAC address, need to generate a CONFLICT interrupt */
 	/* TODO - comparing IP is not correct when it's a gateway lookup */
 
-	uint32_t ip = read32(buffer + o_ARP_SPA);
+	const uint8_t *arp = buffer + 14;
+
+	uint32_t ip = read32(arp + o_ARP_SPA);
 
 	LOGMASKED(LOG_ARP, "Received ARP reply for %d.%d.%d.%d\n",
 		(ip >> 24) & 0xff, (ip >> 16) & 0xff,
@@ -1846,18 +1934,18 @@ void w5100_device::handle_arp_reply(uint8_t *buffer, int length)
 		{
 			if (m_sockets[sn].arp_ip_address == ip)
 			{
-				memcpy(socket + Sn_DHAR0, buffer + o_ARP_SHA, 6);
+				memcpy(socket + Sn_DHAR0, arp + o_ARP_SHA, 6);
 				m_sockets[sn].arp_ok = true;
 				m_timers[sn]->reset();
 				switch(proto)
 				{
 					case Sn_MR_IPRAW:
 						sr = Sn_SR_IPRAW;
-						socket_send(sn);
+						socket_send_mac(sn);
 						break;
 					case Sn_MR_UDP:
 						sr = Sn_SR_UDP;
-						socket_send(sn);
+						socket_send_mac(sn);
 						break;
 					case Sn_MR_TCP:
 						sr = Sn_SR_INIT;
@@ -1869,11 +1957,13 @@ void w5100_device::handle_arp_reply(uint8_t *buffer, int length)
 	}
 }
 
-void w5100_device::handle_arp_request(uint8_t *buffer, int length)
+void w5100_device::handle_arp_request(const uint8_t *buffer, int length)
 {
 	/* reply to (broadcast) request for our mac address */
 
-	if (length < 42 || memcmp(buffer + o_ARP_TPA, m_memory + SIPR0, 4)) return;
+	const uint8_t *arp = buffer + 14;
+
+	if (memcmp(arp + o_ARP_TPA, m_memory + SIPR0, 4)) return;
 
 	static const int MESSAGE_SIZE = 42;
 	uint8_t message[MESSAGE_SIZE];
@@ -1882,17 +1972,17 @@ void w5100_device::handle_arp_request(uint8_t *buffer, int length)
 
 	memcpy(message, buffer + 6, 6);
 	memcpy(message + 6, &m_memory[SHAR0], 6);
-	message[12] = ETHERTYPE_ARP >> 8;
-	message[13] = ETHERTYPE_ARP;
+	message[12] = ETHERNET_TYPE_ARP >> 8;
+	message[13] = ETHERNET_TYPE_ARP;
 
-	message[14] = ARP_HARDWARE_ETHERNET >> 8; // hardware type = ethernet
-	message[15] = ARP_HARDWARE_ETHERNET;
-	message[16] = ETHERTYPE_IP >> 8;
-	message[17] = ETHERTYPE_IP;
+	message[14] = ARP_HTYPE_ETHERNET >> 8; // hardware type = ethernet
+	message[15] = ARP_HTYPE_ETHERNET;
+	message[16] = ETHERNET_TYPE_IP >> 8;
+	message[17] = ETHERNET_TYPE_IP;
 	message[18] = 6; // hardware size
 	message[19] = 4; // protocol size
-	message[20] = ARP_OP_REPLY >> 8;
-	message[21] = ARP_OP_REPLY;
+	message[20] = ARP_OPCODE_REPLY >> 8;
+	message[21] = ARP_OPCODE_REPLY;
 	memcpy(message + 22, &m_memory[SHAR0], 6); //sender mac
 	memcpy(message + 28, &m_memory[SIPR0], 4); // sender ip
 	memcpy(message + 32, buffer + 22, 10); // dest mac + ip.
@@ -1909,19 +1999,19 @@ void w5100_device::send_arp_request(uint32_t ip)
 
 	// memset(message, 0, sizeof(message));
 
-	memcpy(message, ETH_BROADCAST, 6);
+	memcpy(message, ETHERNET_BROADCAST, 6);
 	memcpy(message + 6, &m_memory[SHAR0], 6);
-	message[12] = ETHERTYPE_ARP >> 8;
-	message[13] = ETHERTYPE_ARP;
+	message[12] = ETHERNET_TYPE_ARP >> 8;
+	message[13] = ETHERNET_TYPE_ARP;
 
-	message[14] = ARP_HARDWARE_ETHERNET >> 8; // hardware type = ethernet
-	message[15] = ARP_HARDWARE_ETHERNET;
-	message[16] = ETHERTYPE_IP >> 8;
-	message[17] = ETHERTYPE_IP;
+	message[14] = ARP_HTYPE_ETHERNET >> 8; // hardware type = ethernet
+	message[15] = ARP_HTYPE_ETHERNET;
+	message[16] = ETHERNET_TYPE_IP >> 8;
+	message[17] = ETHERNET_TYPE_IP;
 	message[18] = 6; // hardware size
 	message[19] = 4; // protocol size
-	message[20] = ARP_OP_REQUEST >> 8;
-	message[21] = ARP_OP_REQUEST;
+	message[20] = ARP_OPCODE_REQUEST >> 8;
+	message[21] = ARP_OPCODE_REQUEST;
 	memcpy(message + 22, &m_memory[SHAR0], 6); //sender mac
 	memcpy(message + 28, &m_memory[SIPR0], 4); // sender ip
 	memset(message + 32, 0, 6); // target mac
@@ -1947,8 +2037,8 @@ void w5100_device::build_ipraw_header(int sn, uint8_t *buffer, int length)
 	//ethernet header
 	memcpy(buffer + 0, &socket[Sn_DHAR0], 6);
 	memcpy(buffer + 6, &m_memory[SHAR0], 6);
-	buffer[12] = ETHERTYPE_IP >> 8;
-	buffer[13] = ETHERTYPE_IP;
+	buffer[12] = ETHERNET_TYPE_IP >> 8;
+	buffer[13] = ETHERNET_TYPE_IP;
 
 	length -= 14;
 
@@ -1983,8 +2073,8 @@ void w5100_device::build_udp_header(int sn, uint8_t *buffer, int length)
 	//ethernet header
 	memcpy(buffer + 0, &socket[Sn_DHAR0], 6);
 	memcpy(buffer + 6, &m_memory[SHAR0], 6);
-	buffer[12] = ETHERTYPE_IP >> 8;
-	buffer[13] = ETHERTYPE_IP;
+	buffer[12] = ETHERNET_TYPE_IP >> 8;
+	buffer[13] = ETHERNET_TYPE_IP;
 
 	length -= 14;
 
@@ -2040,7 +2130,7 @@ void w5100_device::build_udp_header(int sn, uint8_t *buffer, int length)
 	buffer[41] = crc;
 }
 
-void w5100_device::handle_ping_reply(uint8_t *buffer, int length)
+void w5100_device::handle_icmp_reply(uint8_t *buffer, int length)
 {
 	uint16_t crc;
 
@@ -2072,7 +2162,59 @@ void w5100_device::handle_ping_reply(uint8_t *buffer, int length)
 	send(buffer, length);
 }
 
+void w5100_device::handle_icmp_unreachable(uint8_t *buffer, int length)
+{
 
+	uint16_t crc;
+	uint8_t message[14 + 20 + 8 + 8 + 60]; // max ip header is 15 * 4 == 60
+
+	int ihl = (buffer[14 + o_IP_IHL] & 0x0f) << 4;
+
+	int new_length = 20 + 8 + ihl + 8;
+
+	// ethernet header
+	memcpy(message + o_ETHERNET_DEST , buffer + o_ETHERNET_SRC, 6);
+	memcpy(message + o_ETHERNET_SRC, m_memory + SHAR0, 6);
+	write16(message + o_ETHERNET_TYPE, ETHERNET_TYPE_IP);
+
+	// ip header
+	message[14] = 0x45; // IPv4, length = 5*4
+	message[15] = 0; // TOS
+	message[16] = new_length >> 8; // total length
+	message[17] = new_length;
+	message[18] = m_identification >> 8; // identification
+	message[19] = m_identification;
+	message[20] = 0x40; // flags - don't fragment
+	message[21] = 0x00;
+	message[22] = 64; // TTOL
+	message[23] = IP_ICMP;
+	message[24] = 0; // checksum...
+	message[25] = 0;
+	memcpy(buffer + 26, m_memory + SIPR0, 4); // source ip
+	memcpy(buffer + 30, buffer + 14 + o_IP_SRC_ADDRESS, 4); // destination ip
+
+	// icmp header
+	message[34] = ICMP_DESTINATION_UNREACHABLE;
+	message[35] = 3; // port unreachable
+	message[36] = 0;
+	message[37] = 0;
+	message[38] = 0; // checksum...
+	message[39] = 0;
+
+	memcpy(message + 40, buffer + 14, 8 + ihl);
+
+	// ip crc.
+	crc = util::internet_checksum_creator::simple(buffer + 14, 20);
+	buffer[24] = crc >> 8;
+	buffer[25] = crc;
+
+	// icmp crc
+	crc = util::internet_checksum_creator::simple(buffer + 34, 8 + ihl + 8);
+	buffer[38] = crc >> 8;
+	buffer[39] = crc;
+
+	send(message, new_length + 14);
+}
 
 
 void w5100_device::dump_bytes(const uint8_t *buffer, int length)
@@ -2106,7 +2248,7 @@ void w5100_device::dump_bytes(const uint8_t *buffer, int length)
 	}
 }
 
-/* tcp */
+/* tcp callbacks */
 
 void w5100_device::tcp_state_change(int sn, tcpip_device::tcp_state new_state, tcpip_device::tcp_state old_state)
 {
@@ -2114,11 +2256,6 @@ void w5100_device::tcp_state_change(int sn, tcpip_device::tcp_state new_state, t
 
 	uint8_t *socket = m_memory + Sn_BASE + sn * Sn_SIZE;
 	uint8_t &sr = socket[Sn_SR];
-
-	// TODO -- disconnect irqs.
-
-	using tcp_state = tcpip_device::tcp_state;
-	using disconnect_type = tcpip_device::disconnect_type;
 
 	disconnect_type dt = disconnect_type::none;
 
@@ -2182,6 +2319,85 @@ void w5100_device::tcp_state_change(int sn, tcpip_device::tcp_state new_state, t
 			sr = Sn_SR_TIME_WAIT;
 			break;
 	}
+}
+
+void w5100_device::tcp_receive(int sn)
+{
+	/* read available data from tcp device into the rx buffer, updates pointers, sets irq */
+	/* called by socket read and tcp_event callback */
+
+	auto tcp = m_tcp[sn];
+	uint8_t * socket = m_memory + Sn_BASE + sn * Sn_SIZE;
+
+	int rx_buffer_offset = m_sockets[sn].rx_buffer_offset;
+	int rx_buffer_size = m_sockets[sn].rx_buffer_size;
+
+	uint16_t read_ptr = read16(socket + Sn_RX_RD0);
+	uint16_t write_ptr = read16(socket + Sn_RX_WR0);
+
+	read_ptr &= (rx_buffer_size - 1);
+	write_ptr &= (rx_buffer_size - 1);
+
+	int used = write_ptr - read_ptr;
+	if (used < 0) used += rx_buffer_size;
+	int available = rx_buffer_size - used;
+
+	uint8_t *ptr = m_memory + rx_buffer_offset;
+
+	while (available && !tcp->receive_buffer_empty())
+	{
+		int length = available;
+		if (write_ptr + length > rx_buffer_size)
+			length = rx_buffer_size - write_ptr;
+
+		auto err = tcp->receive(ptr + write_ptr, length, nullptr, nullptr);
+		if (err != tcp_error::ok) break;
+		available -= length;
+		used += length;
+		write_ptr = (write_ptr + length) & (rx_buffer_size - 1);
+	}
+
+
+	socket[Sn_RX_WR0] = write_ptr >> 8;
+	socket[Sn_RX_WR1] = write_ptr;
+
+	socket[Sn_RX_RSR0] = used >> 8;
+	socket[Sn_RX_RSR1] = used;
+
+	if (used != 0)
+	{
+		socket[Sn_IR] |= Sn_IR_RECV;
+		update_ethernet_irq();
+	}
+}
+
+void w5100_device::tcp_send_complete(int sn)
+{
+	uint8_t *socket = m_memory + Sn_BASE + sn * Sn_SIZE;
+
+	auto tcp = m_tcp[sn];
+
+	// int tx_buffer_offset = m_sockets[sn].tx_buffer_offset;
+	int tx_buffer_size = m_sockets[sn].tx_buffer_size;
+
+	uint16_t read_ptr = read16(socket + Sn_TX_RD0);
+	uint16_t write_ptr = read16(socket + Sn_TX_WR0);
+
+	int free = tcp->send_count();
+	read_ptr = (write_ptr - free) & (tx_buffer_size - 1);
+
+
+	socket[Sn_TX_RD0] = read_ptr >> 8;
+	socket[Sn_TX_RD1] = read_ptr;
+	socket[Sn_TX_FSR0] = free >> 8;
+	socket[Sn_TX_FSR1] = free;
+
+	if (tcp->send_buffer_empty())
+	{
+		socket[Sn_IR] |= Sn_IR_SEND_OK;
+		update_ethernet_irq(); 
+	}
+
 }
 
 
