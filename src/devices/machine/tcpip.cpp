@@ -482,7 +482,7 @@ void tcpip_device::segment(const void *buffer, int length)
 		{
 			if (flags & TCP_ACK)
 			{
-				disconnect(disconnect_type::rst);
+				disconnect(disconnect_type::passive_reset);
 				return;
 			}
 			return;
@@ -568,7 +568,7 @@ void tcpip_device::segment(const void *buffer, int length)
 		switch(m_state)
 		{
 			case tcp_state::TCPS_SYN_RECEIVED:
-				disconnect(disconnect_type::rst, m_connect_type == connect_type::passive ? tcp_state::TCPS_LISTEN : tcp_state::TCPS_CLOSED);
+				disconnect(disconnect_type::passive_reset, m_connect_type == connect_type::passive ? tcp_state::TCPS_LISTEN : tcp_state::TCPS_CLOSED);
 				return;
 			case tcp_state::TCPS_ESTABLISHED:
 			case tcp_state::TCPS_FIN_WAIT_1:
@@ -578,7 +578,7 @@ void tcpip_device::segment(const void *buffer, int length)
 			case tcp_state::TCPS_LAST_ACK:
 			case tcp_state::TCPS_TIME_WAIT:
 
-				disconnect(disconnect_type::rst);
+				disconnect(disconnect_type::passive_reset);
 				return;
 
 			default:
@@ -594,7 +594,7 @@ void tcpip_device::segment(const void *buffer, int length)
 		switch(m_state)
 		{
 			case tcp_state::TCPS_SYN_RECEIVED:
-				disconnect(disconnect_type::rst, m_connect_type == connect_type::passive ? tcp_state::TCPS_LISTEN : tcp_state::TCPS_CLOSED);
+				disconnect(disconnect_type::passive_reset, m_connect_type == connect_type::passive ? tcp_state::TCPS_LISTEN : tcp_state::TCPS_CLOSED);
 				return;
 			case tcp_state::TCPS_ESTABLISHED:
 			case tcp_state::TCPS_FIN_WAIT_1:
@@ -604,7 +604,7 @@ void tcpip_device::segment(const void *buffer, int length)
 			case tcp_state::TCPS_LAST_ACK:
 			case tcp_state::TCPS_TIME_WAIT:
 
-				disconnect(disconnect_type::rst);
+				disconnect(disconnect_type::passive_reset);
 				return;
 
 			default:
@@ -733,7 +733,7 @@ void tcpip_device::segment(const void *buffer, int length)
 		{
 			case tcp_state::TCPS_SYN_RECEIVED:
 			case tcp_state::TCPS_ESTABLISHED:
-				m_disconnect_type = disconnect_type::passive;
+				m_disconnect_type = disconnect_type::passive_close;
 				set_state(tcp_state::TCPS_CLOSE_WAIT);
 				break;
 
@@ -1030,12 +1030,12 @@ tcpip_device::tcp_error tcpip_device::close()
 
 		case tcp_state::TCPS_LISTEN:
 		case tcp_state::TCPS_SYN_SENT:
-			disconnect(disconnect_type::active);
+			disconnect(disconnect_type::active_close);
 			return tcp_error::ok;
 
 		case tcp_state::TCPS_SYN_RECEIVED:
 
-			m_disconnect_type = disconnect_type::active;
+			m_disconnect_type = disconnect_type::active_close;
 			if (!m_send_buffer_size)
 			{
 				send_segment(TCP_FIN|TCP_ACK, m_snd_nxt, m_rcv_nxt);
@@ -1047,7 +1047,7 @@ tcpip_device::tcp_error tcpip_device::close()
 			return tcp_error::ok;
 
 		case tcp_state::TCPS_ESTABLISHED:
-			m_disconnect_type = disconnect_type::active;
+			m_disconnect_type = disconnect_type::active_close;
 			if (!m_send_buffer_size)
 			{
 				send_segment(TCP_FIN|TCP_ACK, m_snd_nxt, m_rcv_nxt);
@@ -1088,9 +1088,10 @@ void tcpip_device::disconnect(disconnect_type dt, tcp_state new_state)
 {
 	if (m_disconnect_type == disconnect_type::none) m_disconnect_type = dt;
 
-	if (new_state == tcp_state::TCPS_CLOSED)
+/*
+	if (new_state == tcp_state::TCPS_CLOSED || new_state == tcp_state::TCPS_LISTEN)
 		m_connect_type = connect_type::none;
-
+*/
 	m_send_buffer_size = 0;
 	m_recv_buffer_size = 0;
 	m_recv_buffer_psh_offset = 0;
@@ -1142,7 +1143,7 @@ tcpip_device::tcp_error tcpip_device::abort()
 			break;
 	}
 
-	disconnect(disconnect_type::active);
+	disconnect(disconnect_type::active_reset);
 	return tcp_error::ok;
 }
 

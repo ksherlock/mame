@@ -48,15 +48,17 @@ public:
 
 	enum class disconnect_type {
 		none,
-		active,
-		passive,
-		rst,
+		active_close,
+		passive_close,
+		active_reset,
+		passive_reset,
+		timeout
 	};
 
 	enum class connect_type {
 		none,
 		active,
-		passive
+		passive,
 	};
 
 	enum class tcp_event {
@@ -95,6 +97,7 @@ public:
 	uint16_t get_remote_port() const { return m_remote_port; }
 	const uint8_t *get_remote_mac() const { return m_remote_mac; }
 
+	connect_type get_connect_type() const { return m_connect_type; }
 	disconnect_type get_disconnect_type() const { return m_disconnect_type; }
 
 	void set_send_buffer_size(int);

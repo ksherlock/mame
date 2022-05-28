@@ -44,6 +44,7 @@ TODO:
 
 
 
+using connect_type = tcpip_device::connect_type;
 using disconnect_type = tcpip_device::disconnect_type;
 using tcp_error = tcpip_device::tcp_error;
 using tcp_event = tcpip_device::tcp_event;
@@ -2259,29 +2260,37 @@ void w5100_device::tcp_state_change(int sn, tcpip_device::tcp_state new_state, t
 
 	disconnect_type dt = disconnect_type::none;
 
+	// TODO - 
+
 	switch(new_state)
 	{
 		case tcp_state::TCPS_CLOSED:
 			sr = Sn_SR_CLOSED;
 			dt = tcp->get_disconnect_type();
-			if (dt == disconnect_type::rst || dt == disconnect_type::active)
+			if (dt == disconnect_type::passive_reset || dt == disconnect_type::active_close)
 			{
 				socket[Sn_IR] |= Sn_IR_DISCON; // fin packet recvd.
 				update_ethernet_irq();	
 			}
+			if (dt == disconnect_type::timeout)
+			{
+				socket[Sn_IR] |= Sn_IR_TIMEOUT;
+				update_ethernet_irq();
+			}
 			break;
 
 		case tcp_state::TCPS_LISTEN:
+			// TODO - TCP model remains listening if connection closes before it's established.
 			sr = Sn_SR_LISTEN;
 			break;
 
 		case tcp_state::TCPS_SYN_SENT:
-			if (old_state != tcp_state::TCPS_SYN_RECEIVED)
-				sr = Sn_SR_SYNSENT;
+			// if (old_state != tcp_state::TCPS_SYN_RECEIVED)
+			sr = Sn_SR_SYNSENT;
 			break;
 
 		case tcp_state::TCPS_SYN_RECEIVED:
-			if (old_state == tcp_state::TCPS_LISTEN)
+			if (tcp->get_connect_type() == connect_type::passive)
 			{
 				write32(socket + Sn_DIPR0, tcp->get_remote_ip());
 				write16(socket + Sn_DPORT0, tcp->get_remote_ip());
@@ -2297,8 +2306,9 @@ void w5100_device::tcp_state_change(int sn, tcpip_device::tcp_state new_state, t
 			break;
 
 		case tcp_state::TCPS_CLOSE_WAIT:
+			// close-wait indicates a FIN packet was received.
 			sr = Sn_SR_CLOSE_WAIT;
-			socket[Sn_IR] |= Sn_IR_DISCON; // fin packet recvd.
+			socket[Sn_IR] |= Sn_IR_DISCON;
 			update_ethernet_irq();
 			break;
 
