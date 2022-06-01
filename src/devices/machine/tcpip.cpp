@@ -14,7 +14,10 @@
 
 
 
+#define LOG_GENERAL (1U << 0)
 
+#define VERBOSE (LOG_GENERAL)
+#include "logmacro.h"
 
 
 
@@ -23,16 +26,28 @@
 
 namespace {
 
-
+static const char * States[] = {
+	"TCPS_CLOSED",
+	"TCPS_LISTEN",
+	"TCPS_SYN_SENT",
+	"TCPS_SYN_RECEIVED",
+	"TCPS_ESTABLISHED",
+	"TCPS_CLOSE_WAIT",
+	"TCPS_FIN_WAIT_1",
+	"TCPS_CLOSING",
+	"TCPS_LAST_ACK",
+	"TCPS_FIN_WAIT_2",
+	"TCPS_TIME_WAIT",
+};
 
 enum {
 	o_ETHERNET_DEST = 0,
 	o_ETHERNET_SRC = 6,
 	o_ETHERNET_TYPE = 12,
 
-	ETHERTYPE_IP = 0x0800,
-	ETHERTYPE_ARP = 0x0806,
-	ETHERTYPE_IPV6 = 0x86dd,
+	ETHERNET_TYPE_IP = 0x0800,
+	ETHERNET_TYPE_ARP = 0x0806,
+	ETHERNET_TYPE_IPV6 = 0x86dd,
 };
 
 enum {
@@ -178,10 +193,10 @@ static void checksum(uint8_t *segment, int ip_length, int tcp_length)
 	memcpy(pseudo_header + 0, segment + o_IP_SRC_ADDRESS, 4);
 	memcpy(pseudo_header + 4, segment + o_IP_DEST_ADDRESS, 4);
 	write16(pseudo_header + 8, IP_PROTOCOL_TCP);
-	write16(pseudo_header + 10, ip_length + tcp_length);
+	write16(pseudo_header + 10, tcp_length);
 
 	segment += ip_length;
-	// ip pseudo header.
+
 	cc.append(pseudo_header, sizeof(pseudo_header));
 	cc.append(segment, tcp_length);
 
@@ -207,7 +222,7 @@ static bool verify_segment(const uint8_t *segment, int length, int &ip_header_le
 {
 	if (length < 14 + 20 + 20) return false;
 
-	if (read16(segment + o_ETHERNET_TYPE) != ETHERTYPE_IP) return false;
+	if (read16(segment + o_ETHERNET_TYPE) != ETHERNET_TYPE_IP) return false;
 
 	segment += 14;
 	length -= 14;
@@ -357,15 +372,15 @@ bool tcpip_device::check_segment(const void *buffer, int length)
 
 	const uint8_t *ether_ptr = static_cast<const uint8_t *>(buffer);
 
-	if (read16(ether_ptr + 12) != ETHERTYPE_IP) return false;
+	if (read16(ether_ptr + o_ETHERNET_TYPE) != ETHERNET_TYPE_IP) return false;
 
 	const uint8_t *ip_ptr = static_cast<const uint8_t *>(buffer) + length;
-	int ip_length = (ip_ptr[0] & 0x0f) << 2;
+	int ip_length = (ip_ptr[o_IP_IHL] & 0x0f) << 2;
 
 	if (ip_length < 20) return false;
 
 	const uint8_t *tcp_ptr = ip_ptr + ip_length;
-	int tcp_length = (tcp_ptr[12] >> 4) << 2;
+	int tcp_length = (tcp_ptr[o_TCP_DATA_OFFSET] >> 4) << 2;
 	if (tcp_length < 20) return false;
 
 	uint16_t sport = read16(tcp_ptr + o_TCP_SRC_PORT);
@@ -399,13 +414,20 @@ void tcpip_device::rst_closed_socket(const void *buffer, int flags, uint32_t ack
  */
 void tcpip_device::segment(const void *buffer, int length)
 {
+
+	LOG("segment() state=%s\n", States[m_state]);
+
+
 	int ip_header_length = 0;
 	int tcp_header_length = 0;
 	uint32_t seg_len = 0;
 
 	if (!verify_segment(static_cast<const uint8_t *>(buffer), length,
 		ip_header_length, tcp_header_length, seg_len))
+	{
+		LOG("discarding bad segment\n");
 		return;
+	}
 
 	const uint8_t *ip_ptr = static_cast<const uint8_t *>(buffer) + 14;
 	const uint8_t *tcp_ptr = ip_ptr + ip_header_length;
@@ -864,6 +886,10 @@ tcpip_device::tcp_error tcpip_device::open(uint32_t ip, uint16_t port)
 {
 	// pp 54 
 
+	LOG("open(%d.%d.%d.%d, %d) state=%s\n",
+		(ip >> 24) & 0xff, (ip >> 16) & 0xff, (ip >> 8) & 0xff, (ip >> 0) & 0xff,
+		port, States[m_state]);
+
 	if (m_state != tcp_state::TCPS_CLOSED) return tcp_error::connection_already_exists;
 
 	m_connect_type == connect_type::active;
@@ -890,6 +916,8 @@ tcpip_device::tcp_error tcpip_device::listen(uint16_t port)
 {
 	// pp 54
 
+	LOG("listen(%d) state=%s\n", port, States[m_state]);
+
 	if (m_state != tcp_state::TCPS_CLOSED) return tcp_error::connection_already_exists;
 
 	m_connect_type == connect_type::passive;
@@ -914,6 +942,8 @@ tcpip_device::tcp_error tcpip_device::listen(uint16_t port)
 tcpip_device::tcp_error tcpip_device::send(const void *buffer, unsigned length, bool push, bool urgent)
 {
 	// pp 56
+
+	LOG("send() state=%s\n", States[m_state]);
 
 	switch(m_state)
 	{
@@ -976,6 +1006,9 @@ tcpip_device::tcp_error tcpip_device::send(const void *buffer, unsigned length, 
 // returns error, read-length, push, urgent
 tcpip_device::tcp_error tcpip_device::receive(void *buffer, int &length, bool *push, bool *urgent)
 {
+
+	LOG("receive() state=%s\n", States[m_state]);
+
 	// pp 56
 	int max = 0;
 
@@ -1046,6 +1079,9 @@ tcpip_device::tcp_error tcpip_device::receive(void *buffer, int &length, bool *p
 
 tcpip_device::tcp_error tcpip_device::close()
 {
+
+	LOG("close() state=%s\n", States[m_state]);
+
 	// pp 60
 
 	switch (m_state)
@@ -1142,6 +1178,9 @@ void tcpip_device::force_close()
 
 tcpip_device::tcp_error tcpip_device::abort()
 {
+
+	LOG("abort() state=%s\n", States[m_state]);
+
 	// pp 62
 
 	m_timer->reset();
@@ -1174,6 +1213,9 @@ tcpip_device::tcp_error tcpip_device::abort()
 
 tcpip_device::tcp_error tcpip_device::send_keep_alive()
 {
+
+	LOG("send_keep_alive() state=%s\n", States[m_state]);
+
 	// not in the spec, used by wiznet w5100s.
 	switch(m_state)
 	{
@@ -1184,12 +1226,12 @@ tcpip_device::tcp_error tcpip_device::send_keep_alive()
 			return tcp_error::connection_does_not_exist;
 
 		case tcp_state::TCPS_ESTABLISHED:
+		case tcp_state::TCPS_CLOSE_WAIT:
 
 			send_segment(TCP_ACK, m_snd_nxt - 1, m_rcv_nxt);
 
 			return tcp_error::ok;
 
-		case tcp_state::TCPS_CLOSE_WAIT:
 		case tcp_state::TCPS_FIN_WAIT_1:
 		case tcp_state::TCPS_FIN_WAIT_2:
 		case tcp_state::TCPS_CLOSING:
@@ -1220,7 +1262,7 @@ void tcpip_device::send_data_segment(const uint8_t *data, int data_length, int f
 	// ethernet header
 	memcpy(ptr, m_remote_mac, 6);
 	memcpy(ptr + 6, m_local_mac, 6);
-	write16(ptr + 12, ETHERTYPE_IP);
+	write16(ptr + 12, ETHERNET_TYPE_IP);
 	ptr += 14;
 
 	// ip header
@@ -1269,7 +1311,7 @@ void tcpip_device::send_segment(int flags, uint32_t seq, uint32_t ack)
 	// ethernet header
 	memcpy(ptr, m_remote_mac, 6);
 	memcpy(ptr + 6, m_local_mac, 6);
-	write16(ptr + 12, ETHERTYPE_IP);
+	write16(ptr + 12, ETHERNET_TYPE_IP);
 	ptr += 14;
 
 	// ip header
@@ -1316,7 +1358,7 @@ void tcpip_device::send_segment(const uint8_t *src, int flags, uint32_t seq, uin
 	// ethernet header
 	memcpy(ptr + o_ETHERNET_DEST, src + o_ETHERNET_SRC, 6);
 	memcpy(ptr + o_ETHERNET_SRC, m_local_mac, 6);
-	write16(ptr + 12, ETHERTYPE_IP);
+	write16(ptr + 12, ETHERNET_TYPE_IP);
 	ptr += 14;
 	src += 14;
 

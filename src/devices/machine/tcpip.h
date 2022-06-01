@@ -19,7 +19,7 @@ public:
 
 	tcpip_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock = 0);
 
-	enum class tcp_state {
+	enum tcp_state {
 		TCPS_CLOSED,		/* closed */
 		TCPS_LISTEN,		/* listening for connection */
 		TCPS_SYN_SENT,		/* active, have sent syn */

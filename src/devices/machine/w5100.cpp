@@ -39,8 +39,9 @@ TODO:
 #define LOG_PACKETS (1U << 3)
 #define LOG_ARP     (1U << 4)
 #define LOG_WRITE   (1U << 5)
+#define LOG_TCP     (1U << 6)
 
-#define VERBOSE (LOG_GENERAL|LOG_COMMAND|LOG_FILTER|LOG_PACKETS|LOG_ARP)
+#define VERBOSE (LOG_GENERAL|LOG_COMMAND|LOG_FILTER|LOG_PACKETS|LOG_ARP|LOG_TCP)
 #include "logmacro.h"
 
 
@@ -616,7 +617,7 @@ void w5100_device::device_add_mconfig(machine_config &config)
 		tcp->set_param(sn);
 		if (sn == 4) continue;
 
-		tcp->set_on_state_change([&](tcp_state new_state, tcp_state old_state){
+		tcp->set_on_state_change([this,sn](tcp_state new_state, tcp_state old_state){
 			tcp_state_change(sn, new_state, old_state);
 		});
 		tcp->set_send_function([this](void *buffer, int length){
@@ -1115,10 +1116,15 @@ void w5100_device::update_tmsr(uint8_t value)
 void w5100_device::sl_command(int command)
 {
 
+	uint8_t &cr = m_memory[SLRCR];
+
+	if (cr) return;
+
 	switch(command)
 	{
 		case SLCR_ARP:
 			LOGMASKED(LOG_COMMAND, "Socket-Less ARP\n");
+			cr = command;
 			m_sockets[4].command = command;
 			sl_arp();
 			break;
@@ -1126,6 +1132,7 @@ void w5100_device::sl_command(int command)
 		case SLCR_PING:
 			// per SOCKET-less Command Application Note (1.0.0), PING will first ARP.
 			LOGMASKED(LOG_COMMAND, "Socket-Less Ping\n");
+			cr = command;
 			m_sockets[4].command = command;
 			if (!find_mac(4, read32(m_memory + SLIPR0), m_memory + SLPHAR0, read16(m_memory + SLRTR0)))
 				return;
@@ -1172,9 +1179,10 @@ void w5100_device::socket_command(int sn, int command)
 	switch(command)
 	{
 		case Sn_CR_OPEN:
+			// a2stream re-opens CR_MACRAW as TCP w/o closing.
 			LOGMASKED(LOG_COMMAND, "Socket: %d: open\n", sn);
-			if (sr == Sn_SR_CLOSED)
-				socket_open(sn);
+			// if (sr == Sn_SR_CLOSED)
+			socket_open(sn);
 			break;
 
 		case Sn_CR_LISTEN:
@@ -1191,8 +1199,7 @@ void w5100_device::socket_command(int sn, int command)
 
 		case Sn_CR_DISCON:
 			LOGMASKED(LOG_COMMAND, "Socket: %d: disconnect\n", sn);
-			if (sr == Sn_SR_ESTABLISHED || sr == Sn_SR_CLOSE_WAIT)
-				socket_disconnect(sn);
+			socket_disconnect(sn);
 			break;
 
 		case Sn_CR_CLOSE:
@@ -1202,7 +1209,7 @@ void w5100_device::socket_command(int sn, int command)
 
 		case Sn_CR_RECV:
 			LOGMASKED(LOG_COMMAND, "Socket: %d: receive\n", sn);
-			if (sr == Sn_SR_UDP || sr == Sn_SR_IPRAW || sr == Sn_SR_MACRAW || sr == Sn_SR_ESTABLISHED || sr == Sn_SR_CLOSE_WAIT)
+			if (sr == Sn_SR_UDP || sr == Sn_SR_IPRAW || sr == Sn_SR_MACRAW || sr == Sn_SR_ESTABLISHED || sr == Sn_SR_CLOSE_WAIT || sr == Sn_SR_FIN_WAIT)
 				socket_recv(sn);
 			break;
 
@@ -1290,7 +1297,10 @@ void w5100_device::socket_open(int sn)
 	socket[Sn_RX_RSR0] = 0;
 	socket[Sn_RX_RSR1] = 0;
 
+	m_timers[sn]->reset();
 	m_sockets[sn].reset();
+	m_tcp[sn]->abort();
+	m_tcp[sn]->close();
 
 	if (VERBOSE & LOG_COMMAND)
 	{
@@ -1299,12 +1309,12 @@ void w5100_device::socket_open(int sn)
 		{
 			#if 0
 			case Sn_MR_TCP:
-				sbprintf(extra, 32, "ip = %d.%d.%d.%d:%d",
+				sprintf(extra, 32, "ip = %d.%d.%d.%d:%d",
 					socket[Sn_DIPR0],
 					socket[Sn_DIPR1],
 					socket[Sn_DIPR2],
 					socket[Sn_DIPR3],
-					(socket[Sn_DPORT0] << 8) | socket[Sn_DPORT1]
+					read16(socket + Sn_DPORT0])
 				);
 				break;
 			case Sn_MR_UDP:
@@ -1544,9 +1554,6 @@ void w5100_device::socket_send_keep(int sn)
 		return;
 
 	m_tcp[sn]->send_keep_alive();
-	// turns on keep-alive messages.
-	// see also Sn_KPALVTR (w5100s)
-	// m_tcp[sn]->set_keep_alive_timer(30);
 }
 
 void w5100_device::socket_connect(int sn)
@@ -1753,7 +1760,7 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 	{
 		const uint8_t *socket = m_memory + Sn_BASE + sn * Sn_SIZE;
 		int sr = socket[Sn_SR];
-		int proto = socket[Sn_MR] & 0xff;
+		int proto = socket[Sn_MR] & 0x0f;
 
 		int port = read16(socket + Sn_PORT0);
 
@@ -1819,6 +1826,7 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 			uint16_t seq = read16(m_memory + PINGSEQR0);
 			if (id == read16(icmp + 4) && seq == read16(icmp + 6))
 			{
+				m_memory[SLCR] = 0;
 				m_sockets[4].command = 0;
 				m_timers[4]->reset();
 				m_memory[SLIR] |= SLIR_PING;
@@ -2075,6 +2083,7 @@ void w5100_device::handle_arp_reply(const uint8_t *buffer, int length)
 			// don't set arp_ok for ARP since it doesn't use gateway logic.
 			if (m_sockets[4].command == SLCR_ARP)
 			{
+				m_memory[SLCR] = 0;
 				m_timers[4]->reset();
 				m_memory[SLIR] |= SLIR_ARP;
 				update_ethernet_irq();
@@ -2133,7 +2142,7 @@ void w5100_device::handle_arp_request(const uint8_t *buffer, int length)
 
 	// memset(message, 0, sizeof(message));
 
-	memcpy(message, buffer + 6, 6);
+	memcpy(message, buffer + 6, 6); // should be arp + o_ARP_SHA? 
 	memcpy(message + 6, &m_memory[SHAR0], 6);
 	message[12] = ETHERNET_TYPE_ARP >> 8;
 	message[13] = ETHERNET_TYPE_ARP;
@@ -2476,8 +2485,6 @@ void w5100_device::tcp_state_change(int sn, tcpip_device::tcp_state new_state, t
 
 	disconnect_type dt = disconnect_type::none;
 
-	// TODO - 
-
 	switch(new_state)
 	{
 		case tcp_state::TCPS_CLOSED:
@@ -2493,16 +2500,19 @@ void w5100_device::tcp_state_change(int sn, tcpip_device::tcp_state new_state, t
 				socket[Sn_IR] |= Sn_IR_TIMEOUT;
 				update_ethernet_irq();
 			}
+			LOGMASKED(LOG_TCP, "tcp socket %d SR_CLOSED\n", sn);
 			break;
 
 		case tcp_state::TCPS_LISTEN:
 			// TODO - TCP model remains listening if connection closes before it's established.
 			sr = Sn_SR_LISTEN;
+			LOGMASKED(LOG_TCP, "tcp socket %d SR_LISTEN\n", sn);
 			break;
 
 		case tcp_state::TCPS_SYN_SENT:
 			// if (old_state != tcp_state::TCPS_SYN_RECEIVED)
 			sr = Sn_SR_SYNSENT;
+			LOGMASKED(LOG_TCP, "tcp socket %d SR_SYNSENT\n", sn);
 			break;
 
 		case tcp_state::TCPS_SYN_RECEIVED:
@@ -2520,6 +2530,7 @@ void w5100_device::tcp_state_change(int sn, tcpip_device::tcp_state new_state, t
 			sr = Sn_SR_ESTABLISHED;
 			socket[Sn_IR] |= Sn_IR_CON;
 			update_ethernet_irq();
+			LOGMASKED(LOG_TCP, "tcp socket %d SR_ESTABLISHED\n", sn);
 			break;
 
 		case tcp_state::TCPS_CLOSE_WAIT:
