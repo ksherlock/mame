@@ -75,6 +75,7 @@ public:
 	tcp_error send(const void *buffer, unsigned length, bool push = false, bool urgent = false);
 	tcp_error receive(void *buffer, int &length, bool *urgent = nullptr, bool *push = nullptr); // should indicate back urgent + push flags
 	tcp_error abort();
+	tcp_error send_keep_alive();
 
 	tcp_state status() { return m_state; }
 

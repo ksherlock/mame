@@ -1172,6 +1172,34 @@ tcpip_device::tcp_error tcpip_device::abort()
 	return tcp_error::ok;
 }
 
+tcpip_device::tcp_error tcpip_device::send_keep_alive()
+{
+	// not in the spec, used by wiznet w5100s.
+	switch(m_state)
+	{
+		case tcp_state::TCPS_CLOSED:
+		case tcp_state::TCPS_LISTEN:
+		case tcp_state::TCPS_SYN_SENT:
+		case tcp_state::TCPS_SYN_RECEIVED:
+			return tcp_error::connection_does_not_exist;
+
+		case tcp_state::TCPS_ESTABLISHED:
+
+			send_segment(TCP_ACK, m_snd_nxt - 1, m_rcv_nxt);
+
+			return tcp_error::ok;
+
+		case tcp_state::TCPS_CLOSE_WAIT:
+		case tcp_state::TCPS_FIN_WAIT_1:
+		case tcp_state::TCPS_FIN_WAIT_2:
+		case tcp_state::TCPS_CLOSING:
+		case tcp_state::TCPS_LAST_ACK:
+		case tcp_state::TCPS_TIME_WAIT:
+			return tcp_error::connection_closing;
+
+	}
+
+}
 
 void tcpip_device::send_data_segment(const uint8_t *data, int data_length, int flags, uint32_t seq, uint32_t ack)
 {

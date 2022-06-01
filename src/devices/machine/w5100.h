@@ -65,7 +65,7 @@ private:
 
 	void sl_command(int command);
 	void sl_arp();
-	void sl_ping();
+	void send_icmp_request();
 
 
 	uint16_t allocate_port(int proto);

@@ -766,7 +766,7 @@ void w5100_device::device_timer(emu_timer &timer, device_timer_id id, int param)
 				sl_arp();
 				break;
 			case SLCR_PING:
-				sl_ping();
+				send_icmp_request();
 				break;
 		}
 	}
@@ -894,6 +894,10 @@ void w5100_device::write(uint16_t offset, uint8_t data)
 	offset &= 0x7fff;
 	LOGMASKED(LOG_WRITE, "write(0x%04x, 0x%02x)\n", offset, data);
 
+	int sn = -1;
+	if (offset >= Sn_BASE && offset < Sn_BASE + Sn_SIZE * 4)
+		sn = (offset - Sn_BASE) / Sn_SIZE;
+
 	switch(offset)
 	{
 		case MR:
@@ -943,8 +947,9 @@ void w5100_device::write(uint16_t offset, uint8_t data)
 		case Sn_CR + Sn_BASE + (Sn_SIZE * 1):
 		case Sn_CR + Sn_BASE + (Sn_SIZE * 2):
 		case Sn_CR + Sn_BASE + (Sn_SIZE * 3):
-			socket_command((offset - Sn_BASE) / Sn_SIZE, data);
+			socket_command(sn, data);
 			return;
+
 	}
 
 	m_memory[offset] = data;
@@ -959,8 +964,6 @@ void w5100_device::write(uint16_t offset, uint8_t data)
 			}
 			break;
 
-
-
 		case SHAR0:
 		case SHAR1:
 		case SHAR2:
@@ -973,8 +976,6 @@ void w5100_device::write(uint16_t offset, uint8_t data)
 		case IMR:
 			update_ethernet_irq();
 			break;
-
-
 
 		case RMSR:
 			update_rmsr(data);
@@ -991,16 +992,9 @@ void w5100_device::write(uint16_t offset, uint8_t data)
 				set_promisc(false);
 			break;
 
-		case SLIMR:
-			if (m_device_type == dev_type::W5100S)
-				update_ethernet_irq();
-			break;
-
 		case MR2:
-			if (m_device_type == dev_type::W5100S)
-				update_ethernet_irq();
-			break;
-
+		case IMR2:
+		case SLIMR:
 		case Sn_IMR + Sn_BASE + (Sn_SIZE * 0):
 		case Sn_IMR + Sn_BASE + (Sn_SIZE * 1):
 		case Sn_IMR + Sn_BASE + (Sn_SIZE * 2):
@@ -1009,6 +1003,13 @@ void w5100_device::write(uint16_t offset, uint8_t data)
 				update_ethernet_irq();
 			break;
 
+		case Sn_KPALVTR + Sn_BASE + (Sn_SIZE * 0):
+		case Sn_KPALVTR + Sn_BASE + (Sn_SIZE * 1):
+		case Sn_KPALVTR + Sn_BASE + (Sn_SIZE * 2):
+		case Sn_KPALVTR + Sn_BASE + (Sn_SIZE * 3):
+			if (m_device_type == dev_type::W5100S)
+				m_tcp[sn]->set_keep_alive_timer(5 * data);
+			break;
 	}
 
 }
@@ -1049,18 +1050,25 @@ uint8_t w5100_device::read(uint16_t offset)
 }
 
 
+/*
+ * w5100s defines Sn_TXBUF_SIZE / Sn_RXBUF_SIZE as alternates for TMSR / RMSR
+ * 0, 1, 2, 4, or 8 for 0k, 1k, 2k, 4k, 8k, respectively.
+ * w5200+ eliminates TMSR/RMSR 
+ */
 
 void w5100_device::update_rmsr(uint8_t value)
 {
 
 	int offset = IO_RXBUF;
-	for (int sn = 0; sn < 4; ++sn, value >>= 2)
+	uint8_t *socket = m_memory + Sn_BASE;
+	for (int sn = 0; sn < 4; ++sn, value >>= 2, socket += Sn_SIZE)
 	{
 		int size = 1024 << (value & 0x3);
 		m_sockets[sn].rx_buffer_size = size;
 		m_sockets[sn].rx_buffer_offset = offset;
 		offset += size;
 		// flag as invalid if offset invalid?
+		socket[Sn_RX_BUF_SIZE] = size >> 10;
 	}
 
 }
@@ -1069,18 +1077,19 @@ void w5100_device::update_tmsr(uint8_t value)
 {
 
 	int offset = IO_TXBUF;
-	for (int sn = 0; sn < 4; ++sn, value >>= 2)
+	uint8_t *socket = m_memory + Sn_BASE;
+	for (int sn = 0; sn < 4; ++sn, value >>= 2, socket += Sn_SIZE)
 	{
 		int size = 1024 << (value & 0x3);
 		m_sockets[sn].tx_buffer_size = size;
 		m_sockets[sn].tx_buffer_offset = offset;
 		offset += size;
 
+		socket[Sn_TX_BUF_SIZE] = size >> 10;
 		// flag as invalid if offset invalid?
 
 
 		/* also update FSR ... */
-		uint8_t *socket = m_memory + Sn_BASE + sn * Sn_SIZE;
 		uint16_t read_ptr = read16(&socket[Sn_TX_RD0]);
 		uint16_t write_ptr = read16(&socket[Sn_TX_WR0]);
 
@@ -1118,7 +1127,9 @@ void w5100_device::sl_command(int command)
 			// per SOCKET-less Command Application Note (1.0.0), PING will first ARP.
 			LOGMASKED(LOG_COMMAND, "Socket-Less Ping\n");
 			m_sockets[4].command = command;
-			sl_ping();
+			if (!find_mac(4, read32(m_memory + SLIPR0), m_memory + SLPHAR0, read16(m_memory + SLRTR0)))
+				return;
+			send_icmp_request();
 			break;
 
 		default:
@@ -1133,6 +1144,7 @@ void w5100_device::sl_arp()
 {
 	static const int sn = 4;
 	uint32_t dest = read32(m_memory + SLIPR0);
+
 	/* Socket-Less Retransmission Timeout Register, 1 = 100us */
 	int rtr = read16(m_memory + SLRTR0);
 	if (!rtr) rtr = 0x07d0;
@@ -1146,62 +1158,7 @@ void w5100_device::sl_arp()
 	send_arp_request(dest);
 }
 
-void w5100_device::sl_ping()
-{
 
-	if (!find_mac(4, read32(m_memory + SLIPR0), m_memory + SLPHAR0, read16(m_memory + SLRTR0)))
-		return;
-
-	static const int MESSAGE_SIZE = 14 + 20 + 26;
-	uint8_t message[MESSAGE_SIZE];
-
-	uint16_t crc;
-
-	memcpy(message + 0, m_memory + SLPHAR0, 6);
-	memcpy(message + 6, m_memory + SHAR0, 6);
-	write16(message + 12, ETHERNET_TYPE_IP);
-
-	message[14] = 0x45; // IPv4, length = 5*4
-	message[15] = 0; // TOS
-	message[16] = MESSAGE_SIZE >> 8; // total length
-	message[17] = MESSAGE_SIZE;
-	message[18] = m_identification >> 8; // identification
-	message[19] = m_identification;
-	message[20] = 0x40; // flags - don't fragment
-	message[21] = 0x00;
-	message[22] = 64; // TTOL
-	message[23] = IP_ICMP;
-	message[24] = 0; // checksum...
-	message[25] = 0;
-	memcpy(message + 26, m_memory + SIPR0, 4); // source ip
-	memcpy(message + 30, m_memory + SLIPR0, 4); // destination ip
-
-	// icmp header
-	message[34] = ICMP_ECHO_REQUEST;
-	message[35] = 0;
-	message[36] = 0; // checksum
-	message[37] = 0;
-	message[38] = m_memory[PINGIDR0];
-	message[39] = m_memory[PINGIDR1];
-	message[40] = m_memory[PINGSEQR0];
-	message[41] = m_memory[PINGSEQR1];
-	for (int i = 0; i < 18; ++i)
-		message[42 + i] = 'A' + i;
-
-
-	// ip crc.
-	crc = util::internet_checksum_creator::simple(message + 14, 20);
-	message[24] = crc >> 8;
-	message[25] = crc;
-
-	// icmp crc
-	crc = util::internet_checksum_creator::simple(message + 34, 26);
-	message[36] = crc >> 8;
-	message[37] = crc;
-
-	// set timer...
-	send(message, MESSAGE_SIZE);
-}
 
 
 void w5100_device::socket_command(int sn, int command)
@@ -1581,9 +1538,15 @@ void w5100_device::socket_send_mac(int sn)
 
 void w5100_device::socket_send_keep(int sn)
 {
+	// manual keepalive.  ignored on w5100s if Sn_KPALVTR > 0
+
+	if (m_device_type == dev_type::W5100S && m_memory[Sn_BASE + sn * Sn_SIZE + Sn_KPALVTR])
+		return;
+
+	m_tcp[sn]->send_keep_alive();
 	// turns on keep-alive messages.
 	// see also Sn_KPALVTR (w5100s)
-	m_tcp[sn]->set_keep_alive_timer(30);
+	// m_tcp[sn]->set_keep_alive_timer(30);
 }
 
 void w5100_device::socket_connect(int sn)
@@ -2108,8 +2071,8 @@ void w5100_device::handle_arp_reply(const uint8_t *buffer, int length)
 		if (m_sockets[4].arp_ip_address == ip)
 		{
 			memcpy(m_memory + SLPHAR0, arp + o_ARP_SHA, 6);
-			m_sockets[4].arp_ok = true;
 
+			// don't set arp_ok for ARP since it doesn't use gateway logic.
 			if (m_sockets[4].command == SLCR_ARP)
 			{
 				m_timers[4]->reset();
@@ -2118,8 +2081,9 @@ void w5100_device::handle_arp_reply(const uint8_t *buffer, int length)
 			}
 			else
 			{
+				m_sockets[4].arp_ok = true;
 				m_sockets[4].retry = 0;
-				sl_ping();	
+				send_icmp_request();	
 			}
 		}
 	}
@@ -2415,6 +2379,60 @@ void w5100_device::send_icmp_unreachable(uint8_t *buffer, int length)
 	send(message, new_length + 14);
 }
 
+// w5100s socket-less ping command.
+void w5100_device::send_icmp_request()
+{
+
+	static const int MESSAGE_SIZE = 14 + 20 + 26;
+	uint8_t message[MESSAGE_SIZE];
+
+	uint16_t crc;
+
+	memcpy(message + 0, m_memory + SLPHAR0, 6);
+	memcpy(message + 6, m_memory + SHAR0, 6);
+	write16(message + 12, ETHERNET_TYPE_IP);
+
+	message[14] = 0x45; // IPv4, length = 5*4
+	message[15] = 0; // TOS
+	message[16] = MESSAGE_SIZE >> 8; // total length
+	message[17] = MESSAGE_SIZE;
+	message[18] = m_identification >> 8; // identification
+	message[19] = m_identification;
+	message[20] = 0x40; // flags - don't fragment
+	message[21] = 0x00;
+	message[22] = 64; // TTOL
+	message[23] = IP_ICMP;
+	message[24] = 0; // checksum...
+	message[25] = 0;
+	memcpy(message + 26, m_memory + SIPR0, 4); // source ip
+	memcpy(message + 30, m_memory + SLIPR0, 4); // destination ip
+
+	// icmp header
+	message[34] = ICMP_ECHO_REQUEST;
+	message[35] = 0;
+	message[36] = 0; // checksum
+	message[37] = 0;
+	message[38] = m_memory[PINGIDR0];
+	message[39] = m_memory[PINGIDR1];
+	message[40] = m_memory[PINGSEQR0];
+	message[41] = m_memory[PINGSEQR1];
+	for (int i = 0; i < 18; ++i)
+		message[42 + i] = 'A' + i;
+
+
+	// ip crc.
+	crc = util::internet_checksum_creator::simple(message + 14, 20);
+	message[24] = crc >> 8;
+	message[25] = crc;
+
+	// icmp crc
+	crc = util::internet_checksum_creator::simple(message + 34, 26);
+	message[36] = crc >> 8;
+	message[37] = crc;
+
+	// set timer...
+	send(message, MESSAGE_SIZE);
+}
 
 void w5100_device::dump_bytes(const uint8_t *buffer, int length)
 {
@@ -2488,16 +2506,17 @@ void w5100_device::tcp_state_change(int sn, tcpip_device::tcp_state new_state, t
 			break;
 
 		case tcp_state::TCPS_SYN_RECEIVED:
-			if (tcp->get_connect_type() == connect_type::passive)
-			{
-				write32(socket + Sn_DIPR0, tcp->get_remote_ip());
-				write16(socket + Sn_DPORT0, tcp->get_remote_ip());
-				memcpy(socket + Sn_DHAR0, tcp->get_remote_mac(), 6);
-			}
 			sr = Sn_SR_SYNRECV;
 			break;
 
 		case tcp_state::TCPS_ESTABLISHED:
+			if (tcp->get_connect_type() == connect_type::passive)
+			{
+				// Sn_MSS should be set to mss for passive mode.
+				write32(socket + Sn_DIPR0, tcp->get_remote_ip());
+				write16(socket + Sn_DPORT0, tcp->get_remote_ip());
+				memcpy(socket + Sn_DHAR0, tcp->get_remote_mac(), 6);
+			}
 			sr = Sn_SR_ESTABLISHED;
 			socket[Sn_IR] |= Sn_IR_CON;
 			update_ethernet_irq();
