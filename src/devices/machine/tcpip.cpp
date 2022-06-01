@@ -368,13 +368,14 @@ void tcpip_device::device_timer(emu_timer &timer, device_timer_id id, int param)
 
 bool tcpip_device::check_segment(const void *buffer, int length)
 {
+	if (m_state == tcp_state::TCPS_CLOSED) return false;
 	if (length < 14 + 20 + 20) return false;
 
 	const uint8_t *ether_ptr = static_cast<const uint8_t *>(buffer);
 
 	if (read16(ether_ptr + o_ETHERNET_TYPE) != ETHERNET_TYPE_IP) return false;
 
-	const uint8_t *ip_ptr = static_cast<const uint8_t *>(buffer) + length;
+	const uint8_t *ip_ptr = static_cast<const uint8_t *>(buffer) + 14;
 	int ip_length = (ip_ptr[o_IP_IHL] & 0x0f) << 2;
 
 	if (ip_length < 20) return false;
@@ -390,7 +391,6 @@ bool tcpip_device::check_segment(const void *buffer, int length)
 	uint32_t dip = read32(ip_ptr + o_IP_DEST_ADDRESS);
 
 
-	if (m_state == tcp_state::TCPS_CLOSED) return false;
 	if (m_state == tcp_state::TCPS_LISTEN)
 	{
 		return (dip == m_local_ip && dport == m_local_port);
