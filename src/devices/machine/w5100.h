@@ -63,17 +63,22 @@ private:
 	void socket_connect(int sn);
 	void socket_disconnect(int sn);
 
+	void sl_command(int command);
+	void sl_arp();
+	void sl_ping();
+
 
 	uint16_t allocate_port(int proto);
 
 
 	bool find_mac(int sn);
+	bool find_mac(int sn, uint32_t dest, uint8_t *mac, int rtr);
 	void send_arp_request(uint32_t ip);
 
 	void handle_arp_request(const uint8_t *buffer, int length);
 	void handle_arp_reply(const uint8_t *buffer, int length);
-	void handle_icmp_reply(uint8_t *buffer, int length);
-	void handle_icmp_unreachable(uint8_t *buffer, int length);
+	void handle_icmp_request(uint8_t *buffer, int length);
+	void send_icmp_unreachable(uint8_t *buffer, int length);
 
 	void receive(int sn, const uint8_t *buffer, int length);
 
@@ -116,11 +121,13 @@ private:
 
 		// arp variables.
 		uint32_t arp_ip_address;
+		int command;
 		bool arp_ok;
 
 		void reset() {
 			retry = 0;
 			arp_ip_address = 0;
+			command = 0;
 			arp_ok = false;
 		}
 	};

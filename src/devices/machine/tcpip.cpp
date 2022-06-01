@@ -277,6 +277,22 @@ tcpip_device::tcpip_device(const machine_config &mconfig, device_type type, cons
 
 void tcpip_device::device_start()
 {
+	// save_item(NAME(m_state));
+
+	save_item(NAME(m_local_ip));
+	save_item(NAME(m_local_port));
+	save_item(NAME(m_local_mac));
+
+	save_item(NAME(m_remote_ip));
+	save_item(NAME(m_remote_port));
+	save_item(NAME(m_remote_mac));
+
+	save_item(NAME(m_ttl));
+	save_item(NAME(m_mss));
+	save_item(NAME(m_keep_alive));
+
+
+
 	m_timer = timer_alloc(0);
 }
 
@@ -285,6 +301,7 @@ void tcpip_device::device_reset()
 	m_state = tcp_state::TCPS_CLOSED;
 
 	m_fin_pending = false;
+	m_urg_pending = false;
 
 	m_keep_alive = 0;
 	m_mss = 536;
@@ -915,7 +932,10 @@ tcpip_device::tcp_error tcpip_device::send(const void *buffer, unsigned length, 
 			if (push) m_send_buffer_psh_offset = m_send_buffer_size;
 
 			if (urgent)
+			{
+				m_urg_pending = true;
 				m_snd_up = m_snd_nxt - 1;
+			}
 			return tcp_error::ok;
 
 		case tcp_state::TCPS_ESTABLISHED:
@@ -929,8 +949,13 @@ tcpip_device::tcp_error tcpip_device::send(const void *buffer, unsigned length, 
 			if (push) m_send_buffer_psh_offset = m_send_buffer_size;
 
 			if (urgent)
+			{
+				m_urg_pending = true;
 				m_snd_up = m_snd_nxt - 1;
+			}
 
+			if (m_send_buffer_size >= m_mss || push)
+				send_data(false);
 			// if send buffer >= mss OR push flag, send it now... 
 			// start sending it...
 			return tcp_error::ok;
