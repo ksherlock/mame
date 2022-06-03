@@ -807,7 +807,9 @@ void tcpip_device::segment(const void *buffer, int length)
 					if (m_event_function) m_event_function(tcp_event::send_complete);
 
 				}
-				if ((seq(seg_ack) <= m_snd_una)) return; // duplicate
+				// seg.ack <= seg.una is a duplicate and can be ignored.
+				// however that will be true from above and text processing still needs to happen.
+				// if ((seq(seg_ack) <= m_snd_una)) ; // duplicate
 				if ((seq(seg_ack) > m_snd_nxt))
 				{
 					// ack for something not yet sent ; ack and ignore.
@@ -1025,7 +1027,7 @@ void tcpip_device::init_tcp()
 	m_iss = 0; 
 
 	m_rcv_nxt = 0;
-	m_rcv_wnd = 0;
+	m_rcv_wnd = m_recv_buffer_capacity;
 	m_rcv_up = 0;
 	m_irs = 0;
 
