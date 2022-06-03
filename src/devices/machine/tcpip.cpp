@@ -7,6 +7,7 @@
 /*
   RFC 793: TCP Functional Specification
   RFC 1122: Requirements for Internet Hosts -- Communication Layers
+  RFC 7323: TCP Extensions for High Performance
 
   TCP/IP Illustrated, Volume 1: The Protocols
   TCP/IP Illustrated, Volume 2: The Implementation
@@ -315,11 +316,9 @@ void tcpip_device::device_reset()
 {
 	m_state = tcp_state::TCPS_CLOSED;
 
-	m_fin_pending = false;
-	m_urg_pending = false;
-
 	m_keep_alive = 0;
-	m_mss = 536;
+	m_local_mss = 536;
+	m_remote_mss = 536;
 	m_ttl = 64;
 
 	m_local_port = 0;
@@ -329,26 +328,13 @@ void tcpip_device::device_reset()
 	memset(m_local_mac, 0, sizeof(m_local_mac));
 	memset(m_remote_mac, 0, sizeof(m_remote_mac));
 
-	m_snd_una = 0;
-	m_snd_nxt = 0;
-	m_snd_wnd = 0;
-	m_snd_up = 0;
-	m_snd_wl1 = 0;
-	m_snd_wl2 = 0;
-	m_iss = 0;
-	m_rcv_nxt = 0;
-	m_rcv_wnd = 0;
-	m_rcv_up = 0;
-	m_irs = 0;
+	init_tcp();
 
 	m_connect_type = connect_type::none;
 	m_disconnect_type = disconnect_type::none;
 
-
 	m_recv_buffer_size = 0;
 	m_send_buffer_size = 0;
-	m_recv_buffer_psh_offset = 0;
-	m_send_buffer_psh_offset = 0;
 
 	set_receive_buffer_size(2048);
 	set_send_buffer_size(2048);
@@ -364,7 +350,103 @@ void tcpip_device::device_timer(emu_timer &timer, device_timer_id id, int param)
 	// last-ack - resend fin
 	// time wait - close connection
 
+
+	attotime now = machine().time() + attotime(0, DOUBLE_TO_ATTOSECONDS(0.125));
+
+	LOG("device_timer - %s\n", now.to_string().c_str());
+
+	m_timer->reset();
+
+	if (m_timer_2msl <= now)
+	{
+		m_timer_2msl = attotime::never;
+		set_state(tcp_state::TCPS_CLOSED);
+		return;
+	}
+
+	if (m_timer_resend <= now)
+	{
+		++m_resend_count;
+		if (m_resend_count > 5)
+		{
+			// todo - back to listen if passive and connection not established.
+			disconnect(disconnect_type::timeout, tcp_state::TCPS_CLOSED);
+			return;
+		}
+		switch(m_state)
+		{
+			case TCPS_CLOSED:
+			case TCPS_LISTEN:
+			case TCPS_CLOSING:
+			case TCPS_CLOSE_WAIT:
+			case TCPS_LAST_ACK:
+			case TCPS_FIN_WAIT_2:
+			case TCPS_TIME_WAIT:
+				break;
+			case TCPS_SYN_RECEIVED:
+				send_segment(TCP_ACK | TCP_SYN, m_iss, m_rcv_nxt);
+				break;
+			case TCPS_SYN_SENT:
+				send_segment(TCP_SYN, m_iss, 0);
+				break;
+			case TCPS_ESTABLISHED:
+				resend_data();
+				break;
+			case TCPS_FIN_WAIT_1:
+				send_segment(TCP_FIN|TCP_ACK, m_snd_nxt-1, m_rcv_nxt);
+				break;
+		}
+		// update m_timer_resend...
+	}
+
+	// merge timer_send + timer_ack?
+	if (m_timer_send <= now)
+	{
+		// m_timer_send = attotime::never;
+		send_data(true);
+	}
+
+	if (m_timer_ack <= now)
+	{
+		send_segment(TCP_ACK, m_snd_nxt, m_rcv_nxt);
+	}
+
+
+
+	if (m_timer_keep_alive <= now)
+	{
+		m_timer_keep_alive = attotime::never;
+		if (m_state == TCPS_ESTABLISHED || m_state == TCPS_CLOSE_WAIT)
+			send_keep_alive();
+	}
+	update_timer();
 }
+
+void tcpip_device::update_timer()
+{
+	attotime exp = m_timer->expire();
+	attotime next = std::min({ m_timer_ack, m_timer_send, m_timer_resend, m_timer_2msl, m_timer_keep_alive });
+	
+	if (next < exp)
+	{
+		auto tm = machine().time() - next;
+		m_timer->adjust(tm);
+	}
+
+}
+
+
+void tcpip_device::update_keep_alive()
+{
+	m_timer_keep_alive = attotime::never;
+	if (m_state == TCPS_ESTABLISHED || m_state == TCPS_CLOSE_WAIT)
+	{
+		if (m_keep_alive) m_timer_keep_alive =  machine().time() + attotime(m_keep_alive, 0);
+	}
+	update_timer();
+}
+
+
 
 bool tcpip_device::check_segment(const void *buffer, int length)
 {
@@ -407,6 +489,42 @@ void tcpip_device::rst_closed_socket(const void *buffer, int flags, uint32_t ack
 		send_segment(static_cast<const uint8_t *>(buffer), TCP_RST | TCP_ACK, 0, seq_end);
 	else
 		send_segment(static_cast<const uint8_t *>(buffer), TCP_RST, ack, 0);
+}
+
+void tcpip_device::parse_tcp_options(const uint8_t *options, int length)
+{
+	int ol;
+	// only MSS and window scale supported.
+	while (length > 1)
+	{
+		ol = options[1]; // all bit end/nop have length byte.
+
+		switch(*options)
+		{
+			case 0: /* end of option list */
+				return;
+
+			case 1: /* no operation */
+				ol = 1;
+				break;
+
+			case 2: /* max segment size */
+				if (ol == 4 && length >= 4)
+					m_remote_mss = read16(options + 2);
+				break;
+
+			case 3: /* window scale - RFC 7323 */
+				if (ol == 3 && length >= 3)
+					m_snd_wnd_shift = std::min(14, static_cast<int>(options[2]));
+				break;
+
+			default:
+				break;
+
+		}
+		options += ol;
+		length -= ol;
+	}
 }
 
 /*
@@ -474,6 +592,8 @@ void tcpip_device::segment(const void *buffer, int length)
 		{
 			m_disconnect_type = disconnect_type::none;
 
+			parse_tcp_options(tcp_ptr + 20, tcp_header_length - 20);
+
 			m_rcv_nxt = seg_seq + 1;
 			m_irs = seg_seq;
 			m_iss = generate_iss();
@@ -486,6 +606,7 @@ void tcpip_device::segment(const void *buffer, int length)
 
 			send_segment(TCP_SYN|TCP_ACK, m_iss, m_rcv_nxt); // after variables set above.
 			set_state(tcp_state::TCPS_SYN_RECEIVED);
+			// todo - m_timer_resend....
 		}
 		return;
 	}
@@ -529,12 +650,12 @@ void tcpip_device::segment(const void *buffer, int length)
 
 		if (flags & TCP_SYN)
 		{
+			parse_tcp_options(tcp_ptr + 20, tcp_header_length - 20);
+
 			m_rcv_nxt = seg_seq + 1;
 			m_irs = seg_seq;
 			if (flags & TCP_ACK)
 				m_snd_una = seg_seq;
-			// segments on tx queue now acknowledged should be removed.
-			m_timer->reset();
 
 			// If SND.UNA > ISS (our SYN has been ACKed)
 			if (m_snd_una != m_iss)
@@ -558,6 +679,7 @@ void tcpip_device::segment(const void *buffer, int length)
 			{
 				send_segment(TCP_SYN|TCP_ACK, m_iss, m_rcv_nxt);
 				set_state(tcp_state::TCPS_SYN_RECEIVED);
+				// todo - m_timer_resend....
 
 				// TODO - if other controls or text, queue for after established.
 				return;
@@ -609,6 +731,7 @@ void tcpip_device::segment(const void *buffer, int length)
 			case tcp_state::TCPS_SYN_RECEIVED:
 				disconnect(disconnect_type::passive_reset, m_connect_type == connect_type::passive ? tcp_state::TCPS_LISTEN : tcp_state::TCPS_CLOSED);
 				return;
+
 			case tcp_state::TCPS_ESTABLISHED:
 			case tcp_state::TCPS_FIN_WAIT_1:
 			case tcp_state::TCPS_FIN_WAIT_2:
@@ -616,7 +739,6 @@ void tcpip_device::segment(const void *buffer, int length)
 			case tcp_state::TCPS_CLOSING:
 			case tcp_state::TCPS_LAST_ACK:
 			case tcp_state::TCPS_TIME_WAIT:
-
 				disconnect(disconnect_type::passive_reset);
 				return;
 
@@ -635,6 +757,7 @@ void tcpip_device::segment(const void *buffer, int length)
 			case tcp_state::TCPS_SYN_RECEIVED:
 				disconnect(disconnect_type::passive_reset, m_connect_type == connect_type::passive ? tcp_state::TCPS_LISTEN : tcp_state::TCPS_CLOSED);
 				return;
+
 			case tcp_state::TCPS_ESTABLISHED:
 			case tcp_state::TCPS_FIN_WAIT_1:
 			case tcp_state::TCPS_FIN_WAIT_2:
@@ -642,7 +765,6 @@ void tcpip_device::segment(const void *buffer, int length)
 			case tcp_state::TCPS_CLOSING:
 			case tcp_state::TCPS_LAST_ACK:
 			case tcp_state::TCPS_TIME_WAIT:
-
 				disconnect(disconnect_type::passive_reset);
 				return;
 
@@ -653,8 +775,12 @@ void tcpip_device::segment(const void *buffer, int length)
 
 	if (!(flags & TCP_ACK)) return;
 
+	int tcp_flags = 0;
+
 	if (flags & TCP_ACK)
 	{
+		// todo - option to delay ack and/or include pending data.
+
 		switch(m_state)
 		{
 			case tcp_state::TCPS_SYN_RECEIVED:
@@ -696,6 +822,7 @@ void tcpip_device::segment(const void *buffer, int length)
 
 					//if (m_on_send_complete) m_on_send_complete();
 					if (m_event_function) m_event_function(tcp_event::send_complete);
+
 				}
 				if ((seq(seg_ack) <= m_snd_una)) return; // duplicate
 				if ((seq(seg_ack) > m_snd_nxt))
@@ -717,13 +844,30 @@ void tcpip_device::segment(const void *buffer, int length)
 
 				}
 
-				// fin-wait-1 -> go to fin-wait-2 if fin acknowledged.
-				if (m_state == tcp_state::TCPS_FIN_WAIT_1 && m_snd_una == m_snd_nxt)
-					set_state(tcp_state::TCPS_FIN_WAIT_2);
+				if (m_snd_una == m_snd_nxt && !m_send_buffer_size)
+				{
+					if (m_state == TCPS_ESTABLISHED && m_fin_pending)
+					{
+						tcp_flags |= TCP_FIN | TCP_ACK;
+						m_fin_pending = false;
+						send_segment(TCP_FIN|TCP_ACK, m_snd_nxt, m_rcv_nxt);
+						m_snd_nxt += 1;
+						set_state(tcp_state::TCPS_FIN_WAIT_1);
+						// todo - m_timer_resend....
+					}
+					// fin-wait-1 -> go to fin-wait-2 if fin acknowledged.
+					if (m_state == tcp_state::TCPS_FIN_WAIT_1)
+						set_state(tcp_state::TCPS_FIN_WAIT_2);
 
-				// closing -> time-wait if fin acknowledged.
-				if (m_state == tcp_state::TCPS_CLOSING && m_snd_una == m_snd_nxt)
-					set_state(tcp_state::TCPS_TIME_WAIT);
+					// closing -> time-wait if fin acknowledged.
+					if (m_state == tcp_state::TCPS_CLOSING)
+					{
+						set_state(tcp_state::TCPS_TIME_WAIT);
+						m_timer_2msl = machine().time() + attotime(60, 0); // 60-second final timeout.
+						update_timer();
+					}
+				}
+
 				break;
 
 			case tcp_state::TCPS_LAST_ACK:
@@ -750,17 +894,38 @@ void tcpip_device::segment(const void *buffer, int length)
 			case tcp_state::TCPS_ESTABLISHED:
 			case tcp_state::TCPS_FIN_WAIT_1:
 			case tcp_state::TCPS_FIN_WAIT_2:
-				if (seq(m_rcv_up) < seg_up)
+				if (!m_rcv_up_valid || seq(m_rcv_up) < seg_up)
 					m_rcv_up = seg_up; 
+				m_rcv_up_valid = true;
 				break;
 			default: break;
 		}
 	}
 
+
 	// segment text
 	if (seg_len)
 	{
 		// pp 74
+		switch(m_state)
+		{
+			case TCPS_ESTABLISHED:
+			case TCPS_FIN_WAIT_1:
+			case TCPS_FIN_WAIT_2:
+				recv_data(tcp_ptr + tcp_header_length, seg_len, seg_seq, flags & TCP_PSH);
+				// TODO -- if there is pending data, let m_send_timer ack this segment.
+				// TODO -- merge this ACK with the m_fin_pending ack above.
+				send_segment(TCP_ACK, m_snd_nxt, m_rcv_nxt);
+				break;
+			case TCPS_CLOSE_WAIT:
+			case TCPS_CLOSING:
+			case TCPS_LAST_ACK:
+			case TCPS_TIME_WAIT:
+				break;
+			default:
+				break;
+		}
+
 	}
 
 	if (flags & TCP_FIN)
@@ -787,6 +952,8 @@ void tcpip_device::segment(const void *buffer, int length)
 
 			case tcp_state::TCPS_FIN_WAIT_2:
 				set_state(tcp_state::TCPS_TIME_WAIT);
+				m_timer_2msl = machine().time() + attotime(60, 0);
+				update_timer();
 				break;
 
 			case tcp_state::TCPS_CLOSE_WAIT:
@@ -795,6 +962,8 @@ void tcpip_device::segment(const void *buffer, int length)
 				break;
 			case tcp_state::TCPS_TIME_WAIT:
 				// restart the 2msl timer
+				m_timer_2msl = machine().time() + attotime(60, 0);
+				update_timer();
 				break;
 
 			default: break;
@@ -863,6 +1032,50 @@ void tcpip_device::set_receive_buffer_size(int capacity)
 	}
 }
 
+
+void tcpip_device::init_tcp()
+{
+	m_snd_una = 0;
+	m_snd_nxt = 0;
+	m_snd_wnd = 0;
+	m_snd_up = 0;
+	m_snd_wl1 = 0;
+	m_snd_wl2 = 0;
+	m_iss = 0; 
+
+	m_rcv_nxt = 0;
+	m_rcv_wnd = 0;
+	m_rcv_up = 0;
+	m_irs = 0;
+
+	m_snd_up_valid = false;
+	m_rcv_up_valid = false;
+
+	m_fin_pending = false;
+
+	m_recv_buffer_size = 0;
+	m_recv_buffer_psh_offset = 0;
+
+	m_send_buffer_size = 0;
+	m_send_buffer_psh_offset = 0;
+
+	memset(m_send_buffer, 0, m_send_buffer_capacity);
+	memset(m_recv_buffer, 0, m_recv_buffer_capacity);
+
+	m_remote_mss = 536;
+	m_snd_wnd_shift = 0;
+	m_rcv_wnd_shift = 0;
+
+	m_timer_ack = attotime::never;
+	m_timer_send = attotime::never;
+	m_timer_resend = attotime::never;
+	m_timer_2msl = attotime::never;
+	m_timer_keep_alive = attotime::never;
+	m_resend_count = 0;
+
+	m_fragments.clear();
+}
+
 /*
 pp 44, TCP User Commands:
 
@@ -898,8 +1111,7 @@ tcpip_device::tcp_error tcpip_device::open(uint32_t ip, uint16_t port)
 	m_remote_ip = ip;
 	m_remote_port = port;
 
-	m_fin_pending = false;
-	// m_syn_send = false;
+	init_tcp();
 
 	m_iss = generate_iss();
 	m_snd_una = m_iss;
@@ -909,6 +1121,8 @@ tcpip_device::tcp_error tcpip_device::open(uint32_t ip, uint16_t port)
 	// generate segment - <SEQ=ISS><CTL=SYN>
 	send_segment(TCP_SYN, m_iss, 0);
 	set_state(tcp_state::TCPS_SYN_SENT);
+
+	// todo - m_timer_resend....
 	return tcp_error::ok;
 }
 
@@ -929,9 +1143,7 @@ tcpip_device::tcp_error tcpip_device::listen(uint16_t port)
 
 	m_local_port = port;
 
-	m_fin_pending = false;
-	// m_syn_send = false;
-
+	init_tcp();
 
 	set_state(tcp_state::TCPS_LISTEN);
 
@@ -943,7 +1155,11 @@ tcpip_device::tcp_error tcpip_device::send(const void *buffer, unsigned length, 
 {
 	// pp 56
 
-	LOG("send() state=%s\n", States[m_state]);
+	LOG("send(..., %u, %s, %s) state=%s\n",
+		length,
+		push ? "true" : "false",
+		urgent ? "true" : "false",
+	 	States[m_state]);
 
 	switch(m_state)
 	{
@@ -953,26 +1169,13 @@ tcpip_device::tcp_error tcpip_device::send(const void *buffer, unsigned length, 
 
 		case tcp_state::TCPS_SYN_SENT:
 		case tcp_state::TCPS_SYN_RECEIVED:
-			if (m_fin_pending) return tcp_error::connection_closing;
-
-			// m_syn_send = true;
-			if (length + m_send_buffer_size > m_send_buffer_capacity) return tcp_error::insufficient_resources;
-			memcpy(m_send_buffer + m_send_buffer_size, buffer, length);
-			m_send_buffer_size += length;
-			if (push) m_send_buffer_psh_offset = m_send_buffer_size;
-
-			if (urgent)
-			{
-				m_urg_pending = true;
-				m_snd_up = m_snd_nxt - 1;
-			}
-			return tcp_error::ok;
-
 		case tcp_state::TCPS_ESTABLISHED:
 		case tcp_state::TCPS_CLOSE_WAIT:
 
 			if (m_fin_pending) return tcp_error::connection_closing;
 
+			if (!length && !push && !urgent) return tcp_error::ok;
+
 			if (length + m_send_buffer_size > m_send_buffer_capacity) return tcp_error::insufficient_resources;
 			memcpy(m_send_buffer + m_send_buffer_size, buffer, length);
 			m_send_buffer_size += length;
@@ -980,14 +1183,16 @@ tcpip_device::tcp_error tcpip_device::send(const void *buffer, unsigned length, 
 
 			if (urgent)
 			{
-				m_urg_pending = true;
+				m_snd_up_valid = true;
 				m_snd_up = m_snd_nxt - 1;
 			}
 
-			if (m_send_buffer_size >= m_mss || push)
+			if (m_state >= TCPS_ESTABLISHED)
+			{
 				send_data(false);
-			// if send buffer >= mss OR push flag, send it now... 
-			// start sending it...
+				// todo - m_timer_resend....
+			}
+
 			return tcp_error::ok;
 
 		case tcp_state::TCPS_FIN_WAIT_1:
@@ -1007,7 +1212,7 @@ tcpip_device::tcp_error tcpip_device::send(const void *buffer, unsigned length, 
 tcpip_device::tcp_error tcpip_device::receive(void *buffer, int &length, bool *push, bool *urgent)
 {
 
-	LOG("receive() state=%s\n", States[m_state]);
+	LOG("receive(..., %d) state=%s\n", length, States[m_state]);
 
 	// pp 56
 	int max = 0;
@@ -1095,18 +1300,6 @@ tcpip_device::tcp_error tcpip_device::close()
 			return tcp_error::ok;
 
 		case tcp_state::TCPS_SYN_RECEIVED:
-
-			m_disconnect_type = disconnect_type::active_close;
-			if (!m_send_buffer_size)
-			{
-				send_segment(TCP_FIN|TCP_ACK, m_snd_nxt, m_rcv_nxt);
-				m_snd_nxt += 1;
-				set_state(tcp_state::TCPS_FIN_WAIT_1);
-			}
-			else
-				m_fin_pending = true; // handle AFTER connection established and all data sent.
-			return tcp_error::ok;
-
 		case tcp_state::TCPS_ESTABLISHED:
 			m_disconnect_type = disconnect_type::active_close;
 			if (!m_send_buffer_size)
@@ -1114,9 +1307,14 @@ tcpip_device::tcp_error tcpip_device::close()
 				send_segment(TCP_FIN|TCP_ACK, m_snd_nxt, m_rcv_nxt);
 				m_snd_nxt += 1;
 				set_state(tcp_state::TCPS_FIN_WAIT_1);
+				// todo - m_timer_resend....
 			}
 			else
+			{
+				// The CLOSE user call implies a push function
+				send_data(true);
 				m_fin_pending = true;
+			}
 			return tcp_error::ok;
 
 
@@ -1131,6 +1329,7 @@ tcpip_device::tcp_error tcpip_device::close()
 				send_segment(TCP_FIN|TCP_ACK, m_snd_nxt, m_rcv_nxt);
 				m_snd_nxt += 1;
 				set_state(tcp_state::TCPS_LAST_ACK);
+				// todo - m_timer_resend....
 			}
 			else
 				// once all data is sent, generate a FIN segment and -> LAST-ACK.
@@ -1149,17 +1348,7 @@ void tcpip_device::disconnect(disconnect_type dt, tcp_state new_state)
 {
 	if (m_disconnect_type == disconnect_type::none) m_disconnect_type = dt;
 
-/*
-	if (new_state == tcp_state::TCPS_CLOSED || new_state == tcp_state::TCPS_LISTEN)
-		m_connect_type = connect_type::none;
-*/
-	m_send_buffer_size = 0;
-	m_recv_buffer_size = 0;
-	m_recv_buffer_psh_offset = 0;
-	m_send_buffer_psh_offset = 0;
-	m_fragments.clear();
-
-	m_timer->reset();
+	init_tcp();
 
 	set_state(new_state);
 }
@@ -1171,9 +1360,7 @@ void tcpip_device::force_close()
 	m_state = tcp_state::TCPS_CLOSED;
 	m_connect_type = connect_type::none;
 
-	m_timer->reset();
-	m_send_buffer_size = 0;
-	m_recv_buffer_size = 0;
+	init_tcp();
 }
 
 tcpip_device::tcp_error tcpip_device::abort()
@@ -1229,7 +1416,6 @@ tcpip_device::tcp_error tcpip_device::send_keep_alive()
 		case tcp_state::TCPS_CLOSE_WAIT:
 
 			send_segment(TCP_ACK, m_snd_nxt - 1, m_rcv_nxt);
-
 			return tcp_error::ok;
 
 		case tcp_state::TCPS_FIN_WAIT_1:
@@ -1238,7 +1424,6 @@ tcpip_device::tcp_error tcpip_device::send_keep_alive()
 		case tcp_state::TCPS_LAST_ACK:
 		case tcp_state::TCPS_TIME_WAIT:
 			return tcp_error::connection_closing;
-
 	}
 
 }
@@ -1288,7 +1473,7 @@ void tcpip_device::send_data_segment(const uint8_t *data, int data_length, int f
 	ptr[13] = flags;
 	write16(ptr + 14, m_snd_wnd);
 	write16(ptr + 16, 0); // checksum
-	write16(ptr + 18, 0); // urgent ptr
+	write16(ptr + 18, flags & TCP_URG ? m_snd_up : 0); // urgent ptr
 
 	ptr += 20;
 	memcpy(ptr, data, data_length);
@@ -1297,6 +1482,8 @@ void tcpip_device::send_data_segment(const uint8_t *data, int data_length, int f
 	checksum(segment.get() + 14, 20, 20 + data_length);
 
 	m_send_function(segment.get(), SEGMENT_SIZE);
+	update_keep_alive();
+	m_timer_ack = attotime::never;
 }
 
 void tcpip_device::send_segment(int flags, uint32_t seq, uint32_t ack)
@@ -1337,13 +1524,21 @@ void tcpip_device::send_segment(int flags, uint32_t seq, uint32_t ack)
 	ptr[13] = flags;
 	write16(ptr + 14, m_snd_wnd);
 	write16(ptr + 16, 0); // checksum
-	write16(ptr + 18, 0); // urgent ptr
+	write16(ptr + 18, flags & TCP_URG ? m_snd_up : 0); // urgent ptr
 
 
 	checksum(segment + 14, 20, 20);
 
+
 	m_send_function(segment, SEGMENT_SIZE);
+
+	update_keep_alive();
+	if (flags & TCP_ACK) m_timer_ack = attotime::never;
+
 }
+
+
+
 
 /* take ip, port, mac from the src segment */
 void tcpip_device::send_segment(const uint8_t *src, int flags, uint32_t seq, uint32_t ack)
@@ -1470,33 +1665,76 @@ void tcpip_device::recv_data(const uint8_t *data, int length, uint32_t seg_seq, 
 		m_fragments.pop_back();
 	}
 	if (m_event_function) m_event_function(tcp_event::receive_ready);
+
 }
+
 
 void tcpip_device::send_data(bool flush)
 {
 	// m_send_buffer_psh_offset can't be reset until acked.
 	int push_offset = m_send_buffer_psh_offset;
-	int offset = 0;
+	int offset = m_snd_nxt - m_snd_una;
+	int remaining = m_send_buffer_size - offset;
 
-	while (m_snd_wnd && m_send_buffer_size)
+	if (push_offset && offset >= push_offset) push_offset = 0;
+
+	while (m_snd_wnd && remaining)
 	{
 
-		if (!flush && (push_offset == 0 || m_send_buffer_size < m_mss))
+		if (!flush && (push_offset == 0 || remaining < m_mss))
 			break;
 
 		int flags = TCP_ACK;
-		int length = m_send_buffer_size;
-		if (length > m_mss) length = m_mss;
-		if (push_offset && length > push_offset)
+		int length = std::min(m_mss, remaining);
+		if (push_offset && length + offset >= push_offset)
 		{
-			length = push_offset;
+			length = push_offset - offset;
 			push_offset = 0;
 			flags |= TCP_PSH;
 		}
 
-		send_data_segment(m_send_buffer + offset, length, flags, m_snd_nxt + offset, m_rcv_nxt);
+		send_data_segment(m_send_buffer + offset, length, flags, m_snd_nxt, m_rcv_nxt);
 		offset += length;
+		remaining -= length;
+
 		m_snd_wnd -= length;
 		m_snd_nxt += length;
 	}
+	if (remaining)
+	{
+		if (m_timer_send.is_never())
+		{
+			m_timer_send = machine().time() + attotime(0, DOUBLE_TO_ATTOSECONDS(0.25));
+			update_timer();
+		}
+	}
+	else m_timer_send = attotime::never;
 }
+
+void tcpip_device::resend_data()
+{
+	// resend snd.una - snd.nxt
+	// snd.wnd can be ignored since it was taken into consideration when initially sent.
+
+	int push_offset = m_send_buffer_psh_offset;
+	int offset = 0;
+	int remaining = m_snd_nxt - m_snd_una;
+	uint32_t seq = m_snd_una;
+
+	while (remaining)
+	{
+		int flags = TCP_ACK;
+		int length = std::min(m_mss, remaining);
+		if (push_offset && offset + length >= push_offset)
+		{
+			length = push_offset - offset;
+			push_offset = 0;
+			flags |= TCP_PSH;
+		}
+		send_data_segment(m_send_buffer + offset, length, flags, seq, m_rcv_nxt);
+		seq += length;
+		remaining -= length;
+	}
+}
+
+

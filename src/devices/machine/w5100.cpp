@@ -578,7 +578,7 @@ static int verify_ip(const uint8_t *buffer, int length)
 
 w5100_device::w5100_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, dev_type device_type)
 	: device_t(mconfig, type, tag, owner, clock)
-	, device_network_interface(mconfig, *this, 10.0f)
+	, device_network_interface(mconfig, *this, 10)
 	, m_device_type(device_type)
 	, m_tcp(*this, "tcp%u", 0U)
 	, m_irq_handler(*this)
@@ -1300,7 +1300,6 @@ void w5100_device::socket_open(int sn)
 	m_timers[sn]->reset();
 	m_sockets[sn].reset();
 	m_tcp[sn]->abort();
-	m_tcp[sn]->close();
 
 	if (VERBOSE & LOG_COMMAND)
 	{

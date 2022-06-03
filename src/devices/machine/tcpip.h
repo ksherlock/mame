@@ -104,7 +104,12 @@ public:
 	void set_send_buffer_size(int);
 	void set_receive_buffer_size(int);
 
-	void set_keep_alive_timer(int seconds) { m_keep_alive = seconds; }
+	void set_keep_alive_timer(int seconds)
+	{
+		m_keep_alive = seconds;
+		update_keep_alive();
+	}
+
 	void set_param(int param) { m_param = param; }
 
 	// event callbacks
@@ -127,6 +132,14 @@ public:
 	bool send_buffer_empty() const
 	{ return m_send_buffer_size == 0; }
 
+	void set_ttl(int ttl)
+	{ m_ttl = ttl; }
+
+	void set_local_mss(int mss)
+	{ m_local_mss = mss; }
+
+	int get_remote_mss() const
+	{ return m_remote_mss; }
 
 protected:
 
@@ -155,6 +168,13 @@ private:
 
 	void recv_data(const uint8_t *data, int length, uint32_t seg_seq, bool push);
 	void send_data(bool flush);
+	void resend_data();
+
+	void init_tcp();
+	void parse_tcp_options(const uint8_t *options, int length);
+
+	void update_keep_alive();
+	void update_timer();
 
 	tcp_state m_state = tcp_state::TCPS_CLOSED;
 	int m_param = 0;
@@ -168,8 +188,10 @@ private:
 	uint8_t m_remote_mac[6]{};
 
 	int m_ttl = 64;
-	int m_mss = 536;
 	int m_keep_alive = 0;
+	int m_local_mss = 536;
+	int m_remote_mss = 536;
+	int m_mss = 536;
 
 
 	// tcp variables.
@@ -186,8 +208,13 @@ private:
 	uint32_t m_rcv_up = 0; // receive urgent ptr
 	uint32_t m_irs = 0; // initial recv seq number
 
+	int m_snd_wnd_shift = 0;
+	int m_rcv_wnd_shift = 0;
+
+	bool m_snd_up_valid = false;
+	bool m_rcv_up_valid = false;
+
 	bool m_fin_pending = false;
-	bool m_urg_pending = false;
 
 	connect_type m_connect_type = connect_type::none;
 	disconnect_type m_disconnect_type = disconnect_type::none;
@@ -210,6 +237,16 @@ private:
 	std::vector<fragment> m_fragments;
 
 	emu_timer *m_timer = nullptr;
+
+
+	// timers
+	attotime m_timer_ack;
+	attotime m_timer_send;
+	attotime m_timer_resend;
+	attotime m_timer_2msl;
+	attotime m_timer_keep_alive;
+
+	int m_resend_count = 0;
 
 
 	// callbacks
