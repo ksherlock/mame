@@ -307,9 +307,9 @@ void tcpip_device::device_start()
 	save_item(NAME(m_mss));
 	save_item(NAME(m_keep_alive));
 
-
-
-	m_timer = timer_alloc(0);
+	m_timer_keep_alive = timer_alloc(0);
+	m_timer_send = timer_alloc(1);
+	m_timer_resend = timer_alloc(2);
 }
 
 void tcpip_device::device_reset()
@@ -351,20 +351,31 @@ void tcpip_device::device_timer(emu_timer &timer, device_timer_id id, int param)
 	// time wait - close connection
 
 
-	attotime now = machine().time() + attotime(0, DOUBLE_TO_ATTOSECONDS(0.125));
+	LOG("device_timer - %d\n", id);
 
-	LOG("device_timer - %s\n", now.to_string().c_str());
-
-	m_timer->reset();
-
-	if (m_timer_2msl <= now)
+	// keep-alive + 2msl
+	if (id == 0)
 	{
-		m_timer_2msl = attotime::never;
-		set_state(tcp_state::TCPS_CLOSED);
-		return;
+		if (m_state == TCPS_ESTABLISHED || m_state == TCPS_CLOSE_WAIT)
+		{
+			send_keep_alive();
+		}
+		else if (m_state == TCPS_TIME_WAIT)
+		{
+			set_state(TCPS_CLOSED);
+		}
+		else m_timer_keep_alive->reset();
 	}
 
-	if (m_timer_resend <= now)
+	// send 
+	if (id == 1)
+	{
+		send_data(true);
+	}
+
+
+	// resend
+	if (id == 2)
 	{
 		++m_resend_count;
 		if (m_resend_count > 5)
@@ -396,54 +407,24 @@ void tcpip_device::device_timer(emu_timer &timer, device_timer_id id, int param)
 				send_segment(TCP_FIN|TCP_ACK, m_snd_nxt-1, m_rcv_nxt);
 				break;
 		}
-		// update m_timer_resend...
-	}
-
-	// merge timer_send + timer_ack?
-	if (m_timer_send <= now)
-	{
-		// m_timer_send = attotime::never;
-		send_data(true);
-	}
-
-	if (m_timer_ack <= now)
-	{
-		send_segment(TCP_ACK, m_snd_nxt, m_rcv_nxt);
 	}
 
 
-
-	if (m_timer_keep_alive <= now)
-	{
-		m_timer_keep_alive = attotime::never;
-		if (m_state == TCPS_ESTABLISHED || m_state == TCPS_CLOSE_WAIT)
-			send_keep_alive();
-	}
-	update_timer();
 }
 
-void tcpip_device::update_timer()
-{
-	attotime exp = m_timer->expire();
-	attotime next = std::min({ m_timer_ack, m_timer_send, m_timer_resend, m_timer_2msl, m_timer_keep_alive });
-	
-	if (next < exp)
-	{
-		auto tm = machine().time() - next;
-		m_timer->adjust(tm);
-	}
-
-}
 
 
 void tcpip_device::update_keep_alive()
 {
-	m_timer_keep_alive = attotime::never;
 	if (m_state == TCPS_ESTABLISHED || m_state == TCPS_CLOSE_WAIT)
 	{
-		if (m_keep_alive) m_timer_keep_alive =  machine().time() + attotime(m_keep_alive, 0);
+		if (m_keep_alive == 0) m_timer_keep_alive->reset();
+		else
+		{
+			auto tm = attotime(m_keep_alive, 0);
+			m_timer_keep_alive->adjust(tm, 0, tm);
+		}
 	}
-	update_timer();
 }
 
 
@@ -655,7 +636,7 @@ void tcpip_device::segment(const void *buffer, int length)
 			m_rcv_nxt = seg_seq + 1;
 			m_irs = seg_seq;
 			if (flags & TCP_ACK)
-				m_snd_una = seg_seq;
+				m_snd_una = seg_ack;
 
 			// If SND.UNA > ISS (our SYN has been ACKed)
 			if (m_snd_una != m_iss)
@@ -668,6 +649,7 @@ void tcpip_device::segment(const void *buffer, int length)
 
 				send_segment(TCP_ACK, m_snd_nxt, m_rcv_nxt);
 				set_state(tcp_state::TCPS_ESTABLISHED);
+				update_keep_alive();
 
 				// TODO - if other controls or text, continue processing.
 				if ((flags & (TCP_URG | TCP_FIN | TCP_PSH) || seg_len))
@@ -791,6 +773,7 @@ void tcpip_device::segment(const void *buffer, int length)
 					m_snd_wl2 = seg_ack;
 
 					set_state(tcp_state::TCPS_ESTABLISHED);
+					update_keep_alive();
 				}
 				else
 				{
@@ -863,8 +846,7 @@ void tcpip_device::segment(const void *buffer, int length)
 					if (m_state == tcp_state::TCPS_CLOSING)
 					{
 						set_state(tcp_state::TCPS_TIME_WAIT);
-						m_timer_2msl = machine().time() + attotime(60, 0); // 60-second final timeout.
-						update_timer();
+						m_timer_keep_alive->adjust(attotime(60, 0));
 					}
 				}
 
@@ -952,8 +934,7 @@ void tcpip_device::segment(const void *buffer, int length)
 
 			case tcp_state::TCPS_FIN_WAIT_2:
 				set_state(tcp_state::TCPS_TIME_WAIT);
-				m_timer_2msl = machine().time() + attotime(60, 0);
-				update_timer();
+				m_timer_keep_alive->adjust(attotime(60, 0));
 				break;
 
 			case tcp_state::TCPS_CLOSE_WAIT:
@@ -962,8 +943,7 @@ void tcpip_device::segment(const void *buffer, int length)
 				break;
 			case tcp_state::TCPS_TIME_WAIT:
 				// restart the 2msl timer
-				m_timer_2msl = machine().time() + attotime(60, 0);
-				update_timer();
+				m_timer_keep_alive->adjust(attotime(60, 0));
 				break;
 
 			default: break;
@@ -1029,6 +1009,7 @@ void tcpip_device::set_receive_buffer_size(int capacity)
 			m_recv_buffer_capacity = capacity;
 			memset(m_recv_buffer, 0, capacity);
 		}
+		m_rcv_wnd = capacity;
 	}
 }
 
@@ -1066,11 +1047,9 @@ void tcpip_device::init_tcp()
 	m_snd_wnd_shift = 0;
 	m_rcv_wnd_shift = 0;
 
-	m_timer_ack = attotime::never;
-	m_timer_send = attotime::never;
-	m_timer_resend = attotime::never;
-	m_timer_2msl = attotime::never;
-	m_timer_keep_alive = attotime::never;
+	m_timer_keep_alive->reset();
+	m_timer_send->reset();
+	m_timer_resend->reset();
 	m_resend_count = 0;
 
 	m_fragments.clear();
@@ -1266,6 +1245,8 @@ tcpip_device::tcp_error tcpip_device::receive(void *buffer, int &length, bool *p
 					*push = true;
 
 				m_recv_buffer_size -= length;
+				m_rcv_wnd = m_recv_buffer_capacity - m_recv_buffer_size;
+
 				if (m_recv_buffer_psh_offset) m_recv_buffer_psh_offset -= length;
 			}
 			else
@@ -1370,7 +1351,6 @@ tcpip_device::tcp_error tcpip_device::abort()
 
 	// pp 62
 
-	m_timer->reset();
 	switch (m_state)
 	{
 		case tcp_state::TCPS_CLOSED:
@@ -1471,7 +1451,7 @@ void tcpip_device::send_data_segment(const uint8_t *data, int data_length, int f
 	write32(ptr + 8, ack);
 	ptr[12] = 0x50; // 4 * 5 bytes
 	ptr[13] = flags;
-	write16(ptr + 14, m_snd_wnd);
+	write16(ptr + 14, m_rcv_wnd);
 	write16(ptr + 16, 0); // checksum
 	write16(ptr + 18, flags & TCP_URG ? m_snd_up : 0); // urgent ptr
 
@@ -1482,8 +1462,7 @@ void tcpip_device::send_data_segment(const uint8_t *data, int data_length, int f
 	checksum(segment.get() + 14, 20, 20 + data_length);
 
 	m_send_function(segment.get(), SEGMENT_SIZE);
-	update_keep_alive();
-	m_timer_ack = attotime::never;
+	// update_keep_alive();
 }
 
 void tcpip_device::send_segment(int flags, uint32_t seq, uint32_t ack)
@@ -1522,7 +1501,7 @@ void tcpip_device::send_segment(int flags, uint32_t seq, uint32_t ack)
 	write32(ptr + 8, ack);
 	ptr[12] = 0x50; // 4 * 5 bytes
 	ptr[13] = flags;
-	write16(ptr + 14, m_snd_wnd);
+	write16(ptr + 14, m_rcv_wnd);
 	write16(ptr + 16, 0); // checksum
 	write16(ptr + 18, flags & TCP_URG ? m_snd_up : 0); // urgent ptr
 
@@ -1532,9 +1511,7 @@ void tcpip_device::send_segment(int flags, uint32_t seq, uint32_t ack)
 
 	m_send_function(segment, SEGMENT_SIZE);
 
-	update_keep_alive();
-	if (flags & TCP_ACK) m_timer_ack = attotime::never;
-
+	// update_keep_alive();
 }
 
 
@@ -1664,6 +1641,8 @@ void tcpip_device::recv_data(const uint8_t *data, int length, uint32_t seg_seq, 
 
 		m_fragments.pop_back();
 	}
+
+	m_rcv_wnd = m_recv_buffer_capacity - m_recv_buffer_size;
 	if (m_event_function) m_event_function(tcp_event::receive_ready);
 
 }
@@ -1700,15 +1679,9 @@ void tcpip_device::send_data(bool flush)
 		m_snd_wnd -= length;
 		m_snd_nxt += length;
 	}
+
 	if (remaining)
-	{
-		if (m_timer_send.is_never())
-		{
-			m_timer_send = machine().time() + attotime(0, DOUBLE_TO_ATTOSECONDS(0.25));
-			update_timer();
-		}
-	}
-	else m_timer_send = attotime::never;
+		m_timer_send->adjust(attotime(0, DOUBLE_TO_ATTOSECONDS(0.25)));
 }
 
 void tcpip_device::resend_data()

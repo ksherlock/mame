@@ -174,7 +174,6 @@ private:
 	void parse_tcp_options(const uint8_t *options, int length);
 
 	void update_keep_alive();
-	void update_timer();
 
 	tcp_state m_state = tcp_state::TCPS_CLOSED;
 	int m_param = 0;
@@ -236,15 +235,9 @@ private:
 	struct fragment;
 	std::vector<fragment> m_fragments;
 
-	emu_timer *m_timer = nullptr;
-
-
-	// timers
-	attotime m_timer_ack;
-	attotime m_timer_send;
-	attotime m_timer_resend;
-	attotime m_timer_2msl;
-	attotime m_timer_keep_alive;
+	emu_timer *m_timer_keep_alive = nullptr;
+	emu_timer *m_timer_send = nullptr;
+	emu_timer *m_timer_resend = nullptr;
 
 	int m_resend_count = 0;
 
