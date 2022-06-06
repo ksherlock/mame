@@ -6,6 +6,7 @@
 
 /*
   RFC 793: TCP Functional Specification
+  RFC 896:  Congestion Control in IP/TCP Internetworks
   RFC 1122: Requirements for Internet Hosts -- Communication Layers
   RFC 7323: TCP Extensions for High Performance
 
@@ -338,6 +339,8 @@ void tcpip_device::device_reset()
 
 	set_receive_buffer_size(2048);
 	set_send_buffer_size(2048);
+
+	m_nagle = false;
 }
 
 void tcpip_device::device_timer(emu_timer &timer, device_timer_id id, int param)
@@ -370,6 +373,7 @@ void tcpip_device::device_timer(emu_timer &timer, device_timer_id id, int param)
 	// send 
 	if (id == 1)
 	{
+		m_timer_send->set_param(0);
 		send_data(true);
 	}
 
@@ -795,24 +799,36 @@ void tcpip_device::segment(const void *buffer, int length)
 					int delta = static_cast<int32_t>(seg_ack - m_snd_una);
 
 					m_snd_una = seg_ack;
-					m_send_buffer_size -= delta;
-					if (m_send_buffer_psh_offset)
+					if (m_snd_up_valid && seq(seg_ack) >= m_snd_up)
+						m_snd_up_valid = false;
+
+					// if this is acking a fin, there's nothing to move.
+
+					if (m_send_buffer_size)
 					{
-						m_send_buffer_psh_offset -= delta;
-						if (m_send_buffer_psh_offset < 0) m_send_buffer_psh_offset = 0;
+						m_send_buffer_size -= delta;
+						if (m_send_buffer_psh_offset)
+						{
+							m_send_buffer_psh_offset -= delta;
+							if (m_send_buffer_psh_offset < 0) m_send_buffer_psh_offset = 0;
+						}
+						memmove(m_send_buffer, m_send_buffer + delta, m_send_buffer_size);
+
+						//if (m_on_send_complete) m_on_send_complete();
+						if (m_event_function) m_event_function(tcp_event::send_complete);
+
+						if (m_nagle && m_send_buffer_size)
+						{
+							// possibly send queued up data....
+						}
 					}
-					memmove(m_send_buffer, m_send_buffer + delta, m_send_buffer_size);
-
-					//if (m_on_send_complete) m_on_send_complete();
-					if (m_event_function) m_event_function(tcp_event::send_complete);
-
 				}
 				// seg.ack <= seg.una is a duplicate and can be ignored.
 				// however that will be true from above and text processing still needs to happen.
 				// if ((seq(seg_ack) <= m_snd_una)) ; // duplicate
-				if ((seq(seg_ack) > m_snd_nxt))
+				else if ((seq(seg_ack) > m_snd_nxt))
 				{
-					// ack for something not yet sent ; ack and ignore.
+					// ack for something not yet sent ; drop segment and return.
 					send_segment(TCP_ACK, m_snd_nxt, m_rcv_nxt);
 					return;
 				}
@@ -820,6 +836,7 @@ void tcpip_device::segment(const void *buffer, int length)
 				if (ack_valid_le_le(m_snd_una, seg_ack, m_snd_nxt))
 				{
 					// update send window.
+					// could enable data to be sent.
 					if ( (seq(m_snd_wl1) < seg_seq) || (m_snd_wl1 == seg_seq && seq(m_snd_wl2) <= seg_ack) )
 					{
 						m_snd_wnd = seg_wnd;
@@ -834,18 +851,14 @@ void tcpip_device::segment(const void *buffer, int length)
 					if (m_state == TCPS_ESTABLISHED && m_fin_pending)
 					{
 						tcp_flags |= TCP_FIN | TCP_ACK;
-						m_fin_pending = false;
-						send_segment(TCP_FIN|TCP_ACK, m_snd_nxt, m_rcv_nxt);
-						m_snd_nxt += 1;
-						set_state(tcp_state::TCPS_FIN_WAIT_1);
-						// todo - m_timer_resend....
 					}
 					// fin-wait-1 -> go to fin-wait-2 if fin acknowledged.
-					if (m_state == tcp_state::TCPS_FIN_WAIT_1)
+					else if (m_state == tcp_state::TCPS_FIN_WAIT_1)
+					{
 						set_state(tcp_state::TCPS_FIN_WAIT_2);
-
+					}
 					// closing -> time-wait if fin acknowledged.
-					if (m_state == tcp_state::TCPS_CLOSING)
+					else if (m_state == tcp_state::TCPS_CLOSING)
 					{
 						set_state(tcp_state::TCPS_TIME_WAIT);
 						m_timer_keep_alive->adjust(attotime(60, 0));
@@ -855,9 +868,12 @@ void tcpip_device::segment(const void *buffer, int length)
 				break;
 
 			case tcp_state::TCPS_LAST_ACK:
-				// if FIN acknowledged, go to closed state.
-				if (m_snd_una == m_snd_nxt)
+				if (seg_ack == m_snd_nxt)
+				{
+					// if FIN acknowledged, go to closed state.
+					m_snd_una = seg_ack;
 					disconnect(disconnect_type::none);
+				}
 				break;
 
 			case tcp_state::TCPS_TIME_WAIT:
@@ -897,9 +913,8 @@ void tcpip_device::segment(const void *buffer, int length)
 			case TCPS_FIN_WAIT_1:
 			case TCPS_FIN_WAIT_2:
 				recv_data(tcp_ptr + tcp_header_length, seg_len, seg_seq, flags & TCP_PSH);
-				// TODO -- if there is pending data, let m_send_timer ack this segment.
-				// TODO -- merge this ACK with the m_fin_pending ack above.
-				send_segment(TCP_ACK, m_snd_nxt, m_rcv_nxt);
+				tcp_flags |= TCP_ACK;
+				// TODO -- if there is pending data, let m_send_timer ack this segment?
 				break;
 			case TCPS_CLOSE_WAIT:
 			case TCPS_CLOSING:
@@ -915,13 +930,16 @@ void tcpip_device::segment(const void *buffer, int length)
 	if (flags & TCP_FIN)
 	{
 		// pp 75
-		m_rcv_nxt += 1;
+		m_rcv_nxt += 1; // .... time wait already has a fin.  it shouldn't be incremented....
+		tcp_flags |= TCP_ACK;
+
 		// ack it .
 		switch(m_state)
 		{
 			case tcp_state::TCPS_SYN_RECEIVED:
 			case tcp_state::TCPS_ESTABLISHED:
-				m_disconnect_type = disconnect_type::passive_close;
+				if (m_disconnect_type == disconnect_type::none)
+					m_disconnect_type = disconnect_type::passive_close;
 				set_state(tcp_state::TCPS_CLOSE_WAIT);
 				break;
 
@@ -950,7 +968,19 @@ void tcpip_device::segment(const void *buffer, int length)
 
 			default: break;
 		}
+	}
 
+	if (tcp_flags)
+	{
+		send_segment(tcp_flags, m_snd_nxt, m_rcv_nxt);
+		if (tcp_flags & TCP_FIN)
+		{
+			m_snd_nxt++;
+			m_fin_pending = false;
+
+			set_state(m_state == TCPS_ESTABLISHED ? TCPS_FIN_WAIT_1 : TCPS_LAST_ACK);
+			// todo - m_timer_resend....
+		}
 	}
 }
 
@@ -1050,9 +1080,13 @@ void tcpip_device::init_tcp()
 	m_rcv_wnd_shift = 0;
 
 	m_timer_keep_alive->reset();
-	m_timer_send->reset();
+	m_timer_send->adjust(attotime::never, 0);
 	m_timer_resend->reset();
 	m_resend_count = 0;
+
+	m_rto = 1.0;
+	m_srtt = 0;
+	m_rttvar = 0;
 
 	m_fragments.clear();
 }
@@ -1595,6 +1629,7 @@ void tcpip_device::recv_data(const uint8_t *data, int length, uint32_t seg_seq, 
 
 	if (offset > 0)
 	{
+		LOG("data revieved out of order: (%d bytes ahead)\n", offset);
 		auto iter = std::find_if(m_fragments.begin(), m_fragments.end(), [=](const auto &f){
 			return seq(f.seg_seq) <= seg_seq;
 		});
@@ -1650,16 +1685,33 @@ void tcpip_device::recv_data(const uint8_t *data, int length, uint32_t seg_seq, 
 }
 
 
+/*
+Nagle Algorithm:
+If there is unacknowledged data (i.e., SND.NXT >
+SND.UNA), then the sending TCP buffers all user
+data (regardless of the PSH bit), until the
+outstanding data has been acknowledged or until
+the TCP can send a full-sized segment (Eff.snd.MSS
+bytes; see Section 4.2.2.6).
+*/
+
 void tcpip_device::send_data(bool flush)
 {
+	// 1122 pp 99-100
+
 	// m_send_buffer_psh_offset can't be reset until acked.
 	int push_offset = m_send_buffer_psh_offset;
 	int offset = m_snd_nxt - m_snd_una;
 	int remaining = m_send_buffer_size - offset;
 
+	int snd_wnd = m_snd_wnd - offset;
+
 	if (push_offset && offset >= push_offset) push_offset = 0;
 
-	while (m_snd_wnd && remaining)
+	if (m_nagle && offset && remaining < m_mss) return;
+
+
+	while (snd_wnd && remaining)
 	{
 
 		if (!flush && (push_offset == 0 || remaining < m_mss))
@@ -1673,17 +1725,19 @@ void tcpip_device::send_data(bool flush)
 			push_offset = 0;
 			flags |= TCP_PSH;
 		}
+		// if remaining == length && m_fin_pending, could send it here
+		// and state change.  would also affect resend_data() and resend timer
 
 		send_data_segment(m_send_buffer + offset, length, flags, m_snd_nxt, m_rcv_nxt);
 		offset += length;
 		remaining -= length;
 
-		m_snd_wnd -= length;
+		snd_wnd -= length;
 		m_snd_nxt += length;
 	}
 
-	if (remaining)
-		m_timer_send->adjust(attotime(0, DOUBLE_TO_ATTOSECONDS(0.25)));
+	if (remaining && m_timer_send->param() == 0)
+		m_timer_send->adjust(attotime(0, DOUBLE_TO_ATTOSECONDS(0.25)), 1);
 }
 
 void tcpip_device::resend_data()

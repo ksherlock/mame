@@ -193,6 +193,8 @@ private:
 	int m_mss = 536;
 
 
+	bool m_nagle = false;
+
 	// tcp variables.
 	uint32_t m_snd_una = 0; // oldest unack seq number
 	uint32_t m_snd_nxt = 0; // next seq number to send
@@ -240,6 +242,11 @@ private:
 	emu_timer *m_timer_resend = nullptr;
 
 	int m_resend_count = 0;
+
+	// rfc 6298
+	double m_rto = 1.0; // re-transmission timeout.
+	double m_srtt = 0; // smoothed round trip timer
+	int m_rttvar = 0; // round trip time variation
 
 
 	// callbacks

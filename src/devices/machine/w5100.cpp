@@ -1626,8 +1626,8 @@ void w5100_device::socket_disconnect(int sn)
 void w5100_device::socket_recv(int sn)
 {
 	uint8_t *socket = m_memory + Sn_BASE + sn * Sn_SIZE;
-	uint16_t read_ptr = (socket[Sn_RX_RD0] << 8) |  socket[Sn_RX_RD1];
-	uint16_t write_ptr = (socket[Sn_RX_WR0] << 8) |  socket[Sn_RX_WR1];
+	uint16_t read_ptr = read16(socket + Sn_RX_RD0);
+	uint16_t write_ptr = read16(socket + Sn_RX_WR0);
 
 	uint16_t mask = m_sockets[sn].rx_buffer_size - 1;
 
@@ -1636,6 +1636,9 @@ void w5100_device::socket_recv(int sn)
 
 	int size = write_ptr - read_ptr;
 	if (size < 0) size += m_sockets[sn].rx_buffer_size;
+
+	LOG("receive sn=%d read_ptr = 0x%04x write_ptr = 0x%04x size = %d rsr = %d\n",
+		sn, read_ptr, write_ptr, size, read16(socket + Sn_RX_RSR0));
 
 	// update RSR and trigger a RECV interrupt if data still pending.
 	socket[Sn_RX_RSR0] = size >> 8;
@@ -1899,8 +1902,9 @@ void w5100_device::receive(int sn, const uint8_t *buffer, int length)
 	write_ptr &= mask;
 	read_ptr &= mask;
 
-	int used = write_ptr - read_ptr;
-	if (used < 0) used += rx_buffer_size;
+	int used = read16(socket + Sn_RX_RSR0);
+	// int used = write_ptr - read_ptr;
+	// if (used < 0) used += rx_buffer_size;
 
 	switch(proto)
 	{
@@ -2521,9 +2525,9 @@ void w5100_device::tcp_state_change(int sn, tcpip_device::tcp_state new_state, t
 		case tcp_state::TCPS_ESTABLISHED:
 			if (tcp->get_connect_type() == connect_type::passive)
 			{
-				// Sn_MSS should be set to mss for passive mode.
 				write32(socket + Sn_DIPR0, tcp->get_remote_ip());
 				write16(socket + Sn_DPORT0, tcp->get_remote_ip());
+				write16(socket + Sn_MSSR0, tcp->get_remote_mss());
 				memcpy(socket + Sn_DHAR0, tcp->get_remote_mac(), 6);
 			}
 			sr = Sn_SR_ESTABLISHED;
@@ -2537,6 +2541,7 @@ void w5100_device::tcp_state_change(int sn, tcpip_device::tcp_state new_state, t
 			sr = Sn_SR_CLOSE_WAIT;
 			socket[Sn_IR] |= Sn_IR_DISCON;
 			update_ethernet_irq();
+			LOGMASKED(LOG_TCP, "tcp socket %d SR_CLOSE_WAIT\n", sn);
 			break;
 
 		case tcp_state::TCPS_FIN_WAIT_1:
@@ -2575,13 +2580,17 @@ void w5100_device::tcp_receive(int sn)
 	read_ptr &= (rx_buffer_size - 1);
 	write_ptr &= (rx_buffer_size - 1);
 
+	int used = read16(socket + Sn_RX_RSR0);
+
+#if 0
+	// doesn't work when full!
 	int used = write_ptr - read_ptr;
 	if (used < 0) used += rx_buffer_size;
+#endif
 	int available = rx_buffer_size - used;
-
 	uint8_t *ptr = m_memory + rx_buffer_offset;
 
-	while (available && !tcp->receive_buffer_empty())
+	while (available > 0 && !tcp->receive_buffer_empty())
 	{
 		int length = available;
 		if (write_ptr + length > rx_buffer_size)
@@ -2589,6 +2598,7 @@ void w5100_device::tcp_receive(int sn)
 
 		auto err = tcp->receive(ptr + write_ptr, length, nullptr, nullptr);
 		if (err != tcp_error::ok) break;
+		LOGMASKED(LOG_TCP, "copied %d bytes from tcp receive buffer\n", length);
 		available -= length;
 		used += length;
 		write_ptr = (write_ptr + length) & (rx_buffer_size - 1);
@@ -2606,6 +2616,10 @@ void w5100_device::tcp_receive(int sn)
 		socket[Sn_IR] |= Sn_IR_RECV;
 		update_ethernet_irq();
 	}
+
+	LOG("exit receive sn=%d read_ptr = 0x%04x write_ptr = 0x%04x rsr = %d\n",
+		sn, read_ptr, write_ptr, used);
+
 }
 
 void w5100_device::tcp_send_complete(int sn)
