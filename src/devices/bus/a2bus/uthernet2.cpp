@@ -84,14 +84,15 @@ void a2bus_uthernet2_device::device_reset()
 
 uint8_t a2bus_uthernet2_device::read_c0nx(uint8_t offset)
 {
-	switch(offset)
+	/* only 0x04-0x07 are documented but all addresses are wired up. */
+	switch(offset & 0x03)
 	{
-		case 0x04: return m_netinf->read(0x00); /* mode register */
-		case 0x05: return m_netinf->read(0x01); /* IDM high */
-		case 0x06: return m_netinf->read(0x02); /* IDM low */
-		case 0x07: return m_netinf->read(0x03); /* data/register */
-		default: return 0x00;
+		case 0x00: return m_netinf->read(0x00); /* mode register */
+		case 0x01: return m_netinf->read(0x01); /* IDM high */
+		case 0x02: return m_netinf->read(0x02); /* IDM low */
+		case 0x03: return m_netinf->read(0x03); /* data/register */
 	}
+	return 0x00;
 }
 
 /*-------------------------------------------------
@@ -100,13 +101,12 @@ uint8_t a2bus_uthernet2_device::read_c0nx(uint8_t offset)
 
 void a2bus_uthernet2_device::write_c0nx(uint8_t offset, uint8_t data)
 {
-
-	switch(offset)
+	switch(offset & 0x03)
 	{
-		case 0x04: m_netinf->write(0x00, data); break; /* mode register */
-		case 0x05: m_netinf->write(0x01, data); break; /* IDM high */
-		case 0x06: m_netinf->write(0x02, data); break; /* IDM low */
-		case 0x07: m_netinf->write(0x03, data); break; /* data/register */
+		case 0x00: m_netinf->write(0x00, data); break; /* mode register */
+		case 0x01: m_netinf->write(0x01, data); break; /* IDM high */
+		case 0x02: m_netinf->write(0x02, data); break; /* IDM low */
+		case 0x03: m_netinf->write(0x03, data); break; /* data/register */
 	}
 
 }
