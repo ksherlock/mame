@@ -24,7 +24,8 @@
 
 
 
-
+static const int kDefaultTTL = 64;
+static const int kDefaultMSS = 536;
 
 namespace {
 
@@ -511,6 +512,90 @@ void tcpip_device::parse_tcp_options(const uint8_t *options, int length)
 		length -= ol;
 	}
 }
+
+std::vector<uint8_t> tcpip_device::build_reset_segment(const void *buffer, int length)
+{
+
+	std::vector<uint8_t> segment;
+
+	const uint8_t *ether_ptr = static_cast<const uint8_t *>(buffer);
+
+	int ip_header_length = 0;
+	int tcp_header_length = 0;
+	uint32_t seg_len = 0;
+
+	if (!verify_segment(ether_ptr, length,
+		ip_header_length, tcp_header_length, seg_len))
+	{
+		return segment;
+	}
+
+	const uint8_t *ip_ptr = ether_ptr + 14;
+	const uint8_t *tcp_ptr = ip_ptr + ip_header_length;
+
+	int flags = tcp_ptr[o_TCP_FLAGS];
+	uint32_t seg_ack = flags & TCP_ACK ? read32(tcp_ptr + o_TCP_ACK_NUMBER) : 0;
+	uint32_t seg_seq = read32(tcp_ptr + o_TCP_SEQ_NUMBER);
+
+
+	if (flags & TCP_RST) return segment;
+
+
+
+	static const int SEGMENT_SIZE = 54;
+	segment.resize(54, 0);
+	uint8_t *ptr = segment.data();
+
+	// ethernet header
+	memcpy(ptr + o_ETHERNET_DEST, ether_ptr + o_ETHERNET_SRC, 6);
+	memcpy(ptr + o_ETHERNET_SRC, ether_ptr + o_ETHERNET_DEST, 6);
+	write16(ptr + 12, ETHERNET_TYPE_IP);
+	ptr += 14;
+
+	// ip header
+	ptr[0] = 0x45; // ipv4, length = 5*4
+	ptr[1] = 0; // TOS
+	write16(ptr + 2, SEGMENT_SIZE - 14); // length
+	write16(ptr + 4, 0); // identification
+	ptr[6] = 0x40; // flags - don't fragment
+	ptr[7] = 0x00;
+	ptr[8] = kDefaultTTL;
+	ptr[9] = IP_PROTOCOL_TCP;
+	write16(ptr + 10, 0); // checksum
+	write32(ptr + 12, read32(ip_ptr + o_IP_DEST_ADDRESS));
+	write32(ptr + 16, read32(ip_ptr + o_IP_SRC_ADDRESS));
+	ptr += 20;
+
+	// tcp header
+	write16(ptr + 0, read16(tcp_ptr + o_TCP_DEST_PORT));
+	write16(ptr + 2, read16(tcp_ptr + o_TCP_SRC_PORT));
+	write32(ptr + 4, 0); // seq
+	write32(ptr + 8, 0); // ack
+	ptr[12] = 0x50; // 4 * 5 bytes
+	ptr[13] = 0; // flags
+	write16(ptr + 14, 0);
+	write16(ptr + 16, 0); // checksum
+	write16(ptr + 18, 0); // urgent ptr
+
+
+	if (flags & TCP_ACK)
+	{
+		ptr[o_TCP_FLAGS] = TCP_RST | TCP_ACK;
+		write16(ptr + o_TCP_SEQ_NUMBER, 0);
+		write16(ptr + o_TCP_ACK_NUMBER, seg_seq + seg_len);
+	}
+	else
+	{
+		ptr[o_TCP_FLAGS] = TCP_RST;
+		write16(ptr + o_TCP_SEQ_NUMBER, seg_ack);
+		write16(ptr + o_TCP_ACK_NUMBER, 0);
+	}
+
+	checksum(segment.data() + 14, 20, 20);
+
+	return segment;
+}
+
 
 /*
  * Process an incoming TCP segment

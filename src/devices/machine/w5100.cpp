@@ -610,12 +610,11 @@ void w5100_device::device_start()
 
 void w5100_device::device_add_mconfig(machine_config &config)
 {
-	for (int sn = 0; sn < 5; ++sn)
+	for (int sn = 0; sn < 4; ++sn)
 	{
 		auto &tcp = m_tcp[sn];
 		TCPIP(config, tcp, clock());
 		tcp->set_param(sn);
-		if (sn == 4) continue;
 
 		tcp->set_on_state_change([this,sn](tcp_state new_state, tcp_state old_state){
 			tcp_state_change(sn, new_state, old_state);
@@ -1849,7 +1848,9 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 	{
 		if (is_unicast && !(mr2 & MR2_NOTCPRST))
 		{
-			m_tcp[4]->segment(buffer, length); // socket 5 is always closed, will RST.
+			auto seg = tcpip_device::build_reset_segment(buffer, length);
+			if (!seg.empty())
+				send(seg.data(), seg.size());
 		}
 		return;
 	}
@@ -1866,11 +1867,6 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 		}
 		receive(0, buffer, length);
 	}
-
-
-	// TODO -- 5100s specifies that it sends RST (for TCP) and ICMP unreachable (for UDP)
-	// if no matching port. (with register to disable).
-
 
 }
 
@@ -2145,8 +2141,8 @@ void w5100_device::handle_arp_request(const uint8_t *buffer, int length)
 
 	// memset(message, 0, sizeof(message));
 
-	memcpy(message, buffer + 6, 6); // should be arp + o_ARP_SHA? 
-	memcpy(message + 6, &m_memory[SHAR0], 6);
+	memcpy(message, arp + o_ARP_SHA, 6);
+	memcpy(message + 6, m_memory + SHAR0, 6);
 	message[12] = ETHERNET_TYPE_ARP >> 8;
 	message[13] = ETHERNET_TYPE_ARP;
 
@@ -2158,9 +2154,9 @@ void w5100_device::handle_arp_request(const uint8_t *buffer, int length)
 	message[19] = 4; // protocol size
 	message[20] = ARP_OPCODE_REPLY >> 8;
 	message[21] = ARP_OPCODE_REPLY;
-	memcpy(message + 22, &m_memory[SHAR0], 6); //sender mac
-	memcpy(message + 28, &m_memory[SIPR0], 4); // sender ip
-	memcpy(message + 32, buffer + 22, 10); // dest mac + ip.
+	memcpy(message + 22, m_memory + SHAR0, 6); //sender mac
+	memcpy(message + 28, m_memory + SIPR0, 4); // sender ip
+	memcpy(message + 32, arp + o_ARP_SHA, 10); // dest mac + ip.
 
 	LOGMASKED(LOG_ARP, "Replying to ARP request\n");
 	send(message, MESSAGE_SIZE);

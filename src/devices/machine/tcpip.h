@@ -84,6 +84,8 @@ public:
 	void segment(const void *buffer, int length);
 	bool check_segment(const void *buffer, int length);
 
+	static std::vector<uint8_t> build_reset_segment(const void *buffer, int length);
+
 	void set_local_ip(uint32_t ip) { m_local_ip = ip; }
 	void set_local_port(uint16_t port) { m_local_port = port; }
 	void set_local_mac(const uint8_t *);

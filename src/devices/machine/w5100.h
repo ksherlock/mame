@@ -99,7 +99,7 @@ private:
 	uint16_t m_identification = 0;
 	uint32_t m_irq_state = 0;
 
-	required_device_array<tcpip_device, 5> m_tcp;
+	required_device_array<tcpip_device, 4> m_tcp;
 	devcb_write_line m_irq_handler;
 
 	emu_timer *m_timers[5]{};
