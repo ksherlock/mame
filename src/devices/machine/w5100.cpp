@@ -883,9 +883,12 @@ void w5100_device::write(uint16_t offset, uint8_t data)
 				if (m_memory[0] & MR_AI)
 				{
 					m_idm++;
-					if (m_idm == 0x6000) m_idm = 0x4000;
-					if (m_idm == 0x8000) m_idm = 0x6000;
-					if (m_idm == 0x0000) m_idm = 0xe000; // per U2 Programmer's Manual
+					if (m_device_type == dev_type::W5100)
+					{
+						if (m_idm == 0x6000) m_idm = 0x4000;
+						if (m_idm == 0x8000) m_idm = 0x6000;
+						if (m_idm == 0x0000) m_idm = 0xe000;
+					}
 				}
 				break;
 		}
@@ -1036,9 +1039,12 @@ uint8_t w5100_device::read(uint16_t offset)
 				if ((m_memory[0] & MR_AI) && !machine().side_effects_disabled())
 				{
 					m_idm++;
-					if (m_idm == 0x6000) m_idm = 0x4000;
-					if (m_idm == 0x8000) m_idm = 0x6000;
-					if (m_idm == 0x0000) m_idm = 0xe000;
+					if (m_device_type == dev_type::W5100)
+					{
+						if (m_idm == 0x6000) m_idm = 0x4000;
+						if (m_idm == 0x8000) m_idm = 0x6000;
+						if (m_idm == 0x0000) m_idm = 0xe000;
+					}
 				}
 				break;
 		}
