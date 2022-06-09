@@ -5,7 +5,7 @@
 /*
   WIZnet W5100
 
-  Used in: Uthernet II (Apple II), DragonCart II (Atari 8-bit), Spectranet (ZX Spectrum)
+  Used in: Uthernet II (Apple II), Spectranet (ZX Spectrum)
 
   Based on:
   W5100, W5100S, W5200, W5500 datasheets
