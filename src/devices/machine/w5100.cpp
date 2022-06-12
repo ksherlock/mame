@@ -25,7 +25,6 @@
 
 /*
 TODO:
-- UDP multicast - igmp messages
 - full W5100s support
 */
 
@@ -449,7 +448,13 @@ enum {
 enum {
 	o_IGMP_TYPE = 0,
 	o_IGMP_MAX_RESP_TIME = 1,
-	o_IGMP_CHECKSUM = 2
+	o_IGMP_CHECKSUM = 2,
+	o_IGMP_GROUP_ADDRESS = 4,
+
+	IGMP_TYPE_MEMBERSHIP_QUERY = 0x11,
+	IGMP_TYPE_MEMBERSHIP_REPORT_V1 = 0x12,
+	IGMP_TYPE_MEMBERSHIP_REPORT_V2 = 0x16,
+	IGMP_TYPE_LEAVE_GROUP = 0x17
 };
 
 
@@ -1350,8 +1355,9 @@ void w5100_device::socket_open(int sn)
 			sr = Sn_SR_INIT;
 			break;
 		case Sn_MR_UDP:
-			/* TODO -- if multicast bit is set, generate IGMP register message */
 			sr = Sn_SR_UDP;
+			if (socket[Sn_MR] & Sn_MR_MULT)
+				send_igmp(sn, true);
 			break;
 		case Sn_MR_IPRAW:
 			sr = Sn_SR_IPRAW;
@@ -1380,15 +1386,19 @@ void w5100_device::socket_open(int sn)
 
 void w5100_device::socket_close(int sn)
 {
-
 	uint8_t *socket = m_memory + Sn_BASE + (Sn_SIZE * sn);
+
+	int mr = socket[Sn_MR];
+
+	if ((mr & (Sn_MR_MULT | 0x0f)) == (Sn_MR_UDP | Sn_MR_MULT))
+		send_igmp(sn, false);
 
 	socket[Sn_SR] = Sn_SR_CLOSED;
 	m_timers[sn]->reset();
-	/* TODO - if UDP Multicast, send IGMP leave message */
 	/* also reset interrupts? */
 	// socket[Sn_IR] = 0;
 	m_tcp[sn]->force_close();
+
 
 }
 
@@ -1681,7 +1691,6 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 	bool is_unicast = false;
 	bool is_tcp = false;
 	bool is_udp = false;
-	bool is_icmp = false;
 	int ethertype = -1; // 0x0806 = arp, 0x0800 = ip */
 	int ip_proto = -1;
 	int udp_port = 0;
@@ -1741,6 +1750,9 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 		}
 		if (!macraw) return;
 	}
+
+	bool igmp_query = false;
+	uint32_t igmp_query_ip = -1;
 	if (ethertype == ETHERNET_TYPE_IP)
 	{
 		ip_header_length = verify_ip(buffer, length);
@@ -1749,12 +1761,20 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 			uint8_t *ip = buffer + 14;
 			uint8_t *data = ip + ip_header_length;
 			ip_proto = ip[o_IP_PROTOCOL];
-			if (ip_proto == IP_ICMP) is_icmp = true;
 			if (ip_proto == IP_TCP) is_tcp = true;
 			if (ip_proto == IP_UDP)
 			{
 				is_udp = true;
 				udp_port = read16(data + o_UDP_DEST_PORT);
+			}
+			if (ip_proto == IP_IGMP)
+			{
+				uint8_t *igmp = buffer + 14 + ip_header_length;
+				if (igmp[o_IGMP_TYPE] == IGMP_TYPE_MEMBERSHIP_QUERY)
+				{
+					igmp_query = true;
+					igmp_query_ip = read32(igmp + o_IGMP_GROUP_ADDRESS);
+				}
 			}
 		}
 
@@ -1787,6 +1807,13 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 				receive(sn, buffer, length);
 				return;
 			}
+
+			if (igmp_query && (socket[Sn_MR] & Sn_MR_MULT))
+			{
+				uint32_t ip = read32(socket + Sn_DIPR0);
+				if (igmp_query_ip == 0 || igmp_query_ip == ip)
+					send_igmp(sn, true);
+			}
 		}
 
 		if (proto == Sn_MR_TCP)
@@ -1801,7 +1828,7 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 	}
 
 
-	if (is_icmp)
+	if (ip_proto == IP_ICMP)
 	{
 		uint8_t *icmp = buffer + 14 + ip_header_length;
 		int icmp_type = icmp[o_ICMP_TYPE];
@@ -2203,6 +2230,88 @@ void w5100_device::send_arp_request(uint32_t ip)
 		(ip >> 8) & 0xff, (ip >> 0) & 0xff
 	);
 	send(message, MESSAGE_SIZE);
+}
+
+
+/* build and send the IGMP join/leave message for multicast UDP socked */
+// RFC 1112, Host Extensions for IP Multicasting
+// RFC 2236, Internet Group Management Protocol, Version 2
+// RFC 2113, IP Router Alert Option
+void w5100_device::send_igmp(int sn, bool connect)
+{
+	static const int MESSAGE_SIZE = 46 + 4;
+	uint8_t message[MESSAGE_SIZE];
+
+	uint16_t crc;
+
+	const uint8_t *socket = m_memory + Sn_BASE + sn * Sn_SIZE;
+
+	const int igmpv = socket[Sn_MR] & Sn_MR_MC ? 1 : 2;
+
+	// IGMP v1 doesn't have a leave message.
+	if (!connect && igmpv == 1) return;
+
+	memcpy(message, socket + Sn_DHAR0, 6);
+	memcpy(message + 6, &m_memory[SHAR0], 6);
+	message[12] = ETHERNET_TYPE_IP >> 8;
+	message[13] = ETHERNET_TYPE_IP;
+
+	++m_identification;
+
+	int length = igmpv == 1 ? 20 + 8 : 24 + 8;
+	int offset = igmpv == 1 ? 34 : 38;
+
+	// ip header
+	message[14] = igmpv == 1 ? 0x45 : 0x46; // IPv4, length = 5*4
+	message[15] = 0; // TOS
+	message[16] = length >> 8; // total length
+	message[17] = length;
+	message[18] = m_identification >> 8; // identification
+	message[19] = m_identification;
+	message[20] = 0x40; // flags - don't fragment
+	message[21] = 0x00;
+	message[22] = 1; // ttl
+	message[23] = IP_IGMP;
+	message[24] = 0; // checksum...
+	message[25] = 0;
+	memcpy(message + 26, m_memory + SIPR0, 4); // source ip
+	memcpy(message + 30, socket + Sn_DIPR0, 4); // destination ip
+
+	if (igmpv == 2)
+	{
+		// IP Option - Router Alert
+		message[32] = 0x94;
+		message[33] = 0x04;
+		message[34] = 0x00;
+		message[35] = 0x00;
+	}
+
+
+	message[offset + 0] = igmpv == 2 ? IGMP_TYPE_MEMBERSHIP_REPORT_V2 : IGMP_TYPE_MEMBERSHIP_REPORT_V1;
+	message[offset + 1] = 0; // max resp time
+	message[offset + 2] = 0; // checksum
+	message[offset + 3] = 0;
+	memcpy(message + offset + 4, socket + Sn_DIPR0, 4); // multicast address -- destination ip
+
+	if (!connect)
+	{
+		// IGMP v2 leave messages go to the subnet router.
+		static uint8_t eth[] = { 0x01, 0x00, 0x5e, 0x00, 0x00, 0x02 };
+		static uint8_t ip[] = { 0xe0, 0x00, 0x00, 0x02 };
+		memcpy(message + 0, eth, 6);
+		memcpy(message + 30, ip, 4);
+		message[34] = IGMP_TYPE_LEAVE_GROUP;
+	}
+
+	crc = util::internet_checksum_creator::simple(message + 14, 20);
+	message[24] = crc >> 8;
+	message[25] = crc;
+
+	crc = util::internet_checksum_creator::simple(message + offset, 8);
+	message[offset + 2] = crc >> 8;
+	message[offset + 3] = crc;
+
+	send(message, length + 14);
 }
 
 

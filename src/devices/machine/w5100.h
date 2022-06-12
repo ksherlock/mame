@@ -67,9 +67,7 @@ private:
 	void sl_arp();
 	void send_icmp_request();
 
-
 	uint16_t allocate_port(int proto);
-
 
 	bool find_mac(int sn);
 	bool find_mac(int sn, uint32_t dest, uint8_t *mac, int rtr);
@@ -79,9 +77,9 @@ private:
 	void handle_arp_reply(const uint8_t *buffer, int length);
 	void handle_icmp_request(uint8_t *buffer, int length);
 	void send_icmp_unreachable(uint8_t *buffer, int length);
+	void send_igmp(int sn, bool connect);
 
 	void receive(int sn, const uint8_t *buffer, int length);
-
 
 	void build_ethernet_header(int sn, uint8_t *buffer, int length);
 	void build_ipraw_header(int sn, uint8_t *buffer, int length);
