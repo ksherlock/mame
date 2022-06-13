@@ -1810,6 +1810,7 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 
 			if (igmp_query && (socket[Sn_MR] & Sn_MR_MULT))
 			{
+				// n.b. - should use random delay between 0 and igmp max response time.
 				uint32_t ip = read32(socket + Sn_DIPR0);
 				if (igmp_query_ip == 0 || igmp_query_ip == ip)
 					send_igmp(sn, true);
@@ -1923,13 +1924,13 @@ void w5100_device::receive(int sn, const uint8_t *buffer, int length)
 	int rx_buffer_size = m_sockets[sn].rx_buffer_size;
 
 	uint16_t write_ptr = (socket[Sn_RX_WR0] << 8) | socket[Sn_RX_WR1];
-	uint16_t read_ptr = (socket[Sn_RX_RD0] << 8) | socket[Sn_RX_RD1];
+	// uint16_t read_ptr = (socket[Sn_RX_RD0] << 8) | socket[Sn_RX_RD1];
 	// int sr = socket[Sn_SR];
 	int proto = socket[Sn_MR] & 0x0f;
 
 	int mask = rx_buffer_size - 1;
 	write_ptr &= mask;
-	read_ptr &= mask;
+	// read_ptr &= mask;
 
 	int used = read16(socket + Sn_RX_RSR0);
 	// int used = write_ptr - read_ptr;

@@ -1693,7 +1693,7 @@ void tcpip_device::send_segment(const uint8_t *src, int flags, uint32_t seq, uin
 void tcpip_device::recv_data(const uint8_t *data, int length, uint32_t seg_seq, bool push)
 {
 	int offset = seg_seq - m_rcv_nxt;
-	int total = length;
+	// int total = length;
 
 	if (offset < 0)
 	{
@@ -1756,7 +1756,7 @@ void tcpip_device::recv_data(const uint8_t *data, int length, uint32_t seg_seq, 
 
 		m_rcv_nxt += length;
 		m_recv_buffer_size += length;
-		total += length;
+		// total += length;
 
 		if (push) m_recv_buffer_psh_offset = m_recv_buffer_size;
 
