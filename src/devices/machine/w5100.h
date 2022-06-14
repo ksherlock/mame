@@ -64,7 +64,6 @@ private:
 	void socket_disconnect(int sn);
 
 	void sl_command(int command);
-	void sl_arp();
 	void send_icmp_request();
 
 	uint16_t allocate_port(int proto);

@@ -747,14 +747,11 @@ void w5100_device::device_timer(emu_timer &timer, device_timer_id id, int param)
 
 	if (sn == 4)
 	{
-		// param 1 = arp, param 2 = arp before ping, 3 = ping.
 		// w5100s socket-less arp/ping
 		int rcr = m_memory[SLRCR];
 
-
 		if (++m_sockets[sn].retry > rcr)
 		{
-
 			LOGMASKED(LOG_ARP, "ARP timeout for %d.%d.%d.%d\n",
 				(ip >> 24) & 0xff, (ip >> 16) & 0xff,
 				(ip >> 8) & 0xff, (ip >> 0) & 0xff
@@ -765,13 +762,16 @@ void w5100_device::device_timer(emu_timer &timer, device_timer_id id, int param)
 			update_ethernet_irq();
 			return;
 		}
-		switch(m_sockets[sn].command)
+		switch (m_sockets[sn].command)
 		{
 			case SLCR_ARP:
-				sl_arp();
+				send_arp_request(ip);
 				break;
 			case SLCR_PING:
-				send_icmp_request();
+				if (m_sockets[sn].arp_ok)
+					send_icmp_request();
+				else
+					send_arp_request(ip);
 				break;
 		}
 	}
@@ -900,6 +900,13 @@ void w5100_device::write(uint16_t offset, uint8_t data)
 	}
 
 	offset &= 0x7fff;
+	if (offset < 0x4000)
+	{
+		offset &= 0x7ff;
+		if (offset < 0x400)
+			offset &= 0xff;
+	}
+
 	LOGMASKED(LOG_WRITE, "write(0x%04x, 0x%02x)\n", offset, data);
 
 	int sn = -1;
@@ -1057,6 +1064,13 @@ uint8_t w5100_device::read(uint16_t offset)
 
 	offset &= 0x7fff;
 
+	if (offset < 0x4000)
+	{
+		offset &= 0x7ff;
+		if (offset < 0x400)
+			offset &= 0xff;
+	}
+
 	return m_memory[offset];
 }
 
@@ -1130,13 +1144,15 @@ void w5100_device::sl_command(int command)
 
 	if (cr) return;
 
+	m_sockets[4].arp_ok = false;
+
 	switch(command)
 	{
 		case SLCR_ARP:
 			LOGMASKED(LOG_COMMAND, "Socket-Less ARP\n");
 			cr = command;
 			m_sockets[4].command = command;
-			sl_arp();
+			find_mac(4, read32(m_memory + SLIPR0), m_memory + SLPHAR0, read16(m_memory + SLRTR0));
 			break;
 
 		case SLCR_PING:
@@ -1156,26 +1172,6 @@ void w5100_device::sl_command(int command)
 	}
 
 }
-
-void w5100_device::sl_arp()
-{
-	static const int sn = 4;
-	uint32_t dest = read32(m_memory + SLIPR0);
-
-	/* Socket-Less Retransmission Timeout Register, 1 = 100us */
-	int rtr = read16(m_memory + SLRTR0);
-	if (!rtr) rtr = 0x07d0;
-	attotime tm = attotime::from_usec(rtr * 100);
-	m_timers[sn]->adjust(tm, 0, tm);
-
-	m_sockets[sn].arp_ip_address = dest;
-	m_sockets[sn].arp_ok = false;
-	m_sockets[sn].retry = 0;
-
-	send_arp_request(dest);
-}
-
-
 
 
 void w5100_device::socket_command(int sn, int command)
@@ -2113,7 +2109,7 @@ void w5100_device::handle_arp_reply(const uint8_t *buffer, int length)
 		{
 			memcpy(m_memory + SLPHAR0, arp + o_ARP_SHA, 6);
 
-			// don't set arp_ok for ARP since it doesn't use gateway logic.
+			m_sockets[4].arp_ok = true;
 			if (m_sockets[4].command == SLCR_ARP)
 			{
 				m_memory[SLCR] = 0;
@@ -2123,7 +2119,6 @@ void w5100_device::handle_arp_reply(const uint8_t *buffer, int length)
 			}
 			else
 			{
-				m_sockets[4].arp_ok = true;
 				m_sockets[4].retry = 0;
 				send_icmp_request();	
 			}
@@ -2541,7 +2536,7 @@ void w5100_device::send_icmp_request()
 	message[40] = m_memory[PINGSEQR0];
 	message[41] = m_memory[PINGSEQR1];
 	for (int i = 0; i < 18; ++i)
-		message[42 + i] = 'A' + i;
+		message[42 + i] = 'a' + i;
 
 
 	// ip crc.
