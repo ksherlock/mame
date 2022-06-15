@@ -66,10 +66,8 @@ private:
 	void sl_command(int command);
 	void send_icmp_request();
 
-	uint16_t allocate_port(int proto);
-
 	bool find_mac(int sn);
-	bool find_mac(int sn, uint32_t dest, uint8_t *mac, int rtr);
+	bool find_mac(int sn, uint32_t dest, int rtr);
 	void send_arp_request(uint32_t ip);
 
 	void handle_arp_request(const uint8_t *buffer, int length);

@@ -1144,25 +1144,15 @@ void w5100_device::sl_command(int command)
 
 	if (cr) return;
 
-	m_sockets[4].arp_ok = false;
-
 	switch(command)
 	{
 		case SLCR_ARP:
-			LOGMASKED(LOG_COMMAND, "Socket-Less ARP\n");
-			cr = command;
-			m_sockets[4].command = command;
-			find_mac(4, read32(m_memory + SLIPR0), m_memory + SLPHAR0, read16(m_memory + SLRTR0));
-			break;
-
 		case SLCR_PING:
-			// per SOCKET-less Command Application Note (1.0.0), PING will first ARP.
-			LOGMASKED(LOG_COMMAND, "Socket-Less Ping\n");
+			LOGMASKED(LOG_COMMAND, "Socket-Less %s\n", command == SLCR_ARP ? "ARP" : "PING");
 			cr = command;
 			m_sockets[4].command = command;
-			if (!find_mac(4, read32(m_memory + SLIPR0), m_memory + SLPHAR0, read16(m_memory + SLRTR0)))
-				return;
-			send_icmp_request();
+			m_sockets[4].arp_ok = false;
+			find_mac(4, read32(m_memory + SLIPR0), read16(m_memory + SLRTR0));
 			break;
 
 		default:
@@ -1574,60 +1564,16 @@ void w5100_device::socket_connect(int sn)
 
 	uint8_t *socket = m_memory + Sn_BASE + sn * Sn_SIZE;
 
-	// find a free port.
-	uint16_t port = allocate_port(Sn_MR_TCP);
-	socket[Sn_PORT0] = port << 8;
-	socket[Sn_PORT1] = port;
-
 	auto tcp = m_tcp[sn];
 
 	tcp->set_local_ip(read32(m_memory + SIPR0));
-	tcp->set_local_port(port);
+	tcp->set_local_port(read16(socket + Sn_PORT0));
 	tcp->set_local_mac(m_memory + SHAR0);
 	tcp->set_remote_mac(socket + Sn_DHAR0);
 	// todo -- buffer size,
 	tcp->open(read32(socket + Sn_DIPR0), read16(socket + Sn_DPORT0));
 }
 
-// TCP client:  DPORT set before creation, PORT locally generated.
-// TCP server: PORT set before creation, DPORT from connection
-// UDP - PORT set before creation, DPORT/DIPR set before sending
-// IPRAW/MACRAW - n/a
-
-/* find an unused port in the range 0xc000-0xffff */
-uint16_t w5100_device::allocate_port(int proto)
-{
-	int used[4];
-
-
-	for (int sn = 0; sn < 4; ++sn)
-	{
-		const uint8_t *socket = m_memory + Sn_BASE + sn * Sn_SIZE;
-
-		used[sn] = 0;
-		if ((socket[Sn_MR] & 0x0f) == proto)
-		{
-			used[sn] = read16(socket + Sn_PORT0);
-		}
-	}
-
-	int port = machine().time().attoseconds() & 0xffff;
-	for(;;)
-	{
-		bool unique = true;
-		port |= 0xc0000;
-		for (int sn = 0; sn < 4; ++sn)
-		{
-			if (used[sn] == port)
-			{
-				++port;
-				unique = false;
-				break;
-			}
-		}
-		if (unique) return port;
-	}
-}
 
 void w5100_device::socket_disconnect(int sn)
 {
@@ -1800,6 +1746,16 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 			handle_udp = true;
 			if (is_udp && udp_port == port)
 			{
+				int mr = socket[Sn_MR];
+
+				if (is_multicast && !(mr & Sn_MR_MULT)) return;
+
+				if (m_device_type == dev_type::W5100S)
+				{
+					int mr2 = socket[Sn_MR2];
+					if (is_broadcast && (mr2 & Sn_MR2_BRDB)) return;
+					if (is_unicast && (mr & Sn_MR_MULT) && (mr2 & Sn_MR2_UNIB)) return;
+				}
 				receive(sn, buffer, length);
 				return;
 			}
@@ -2024,20 +1980,43 @@ bool w5100_device::find_mac(int sn)
 	/* UDP/IPRAW - if broadcast ip, (255.255.255.255) or (local | ~subnet) */
 	/* use broadcast ethernet address */
 
-	// TODO support for own ip address? loopback?
-
 	uint8_t *socket = m_memory + Sn_BASE + sn * Sn_SIZE;
+
+	uint32_t subnet = read32(m_memory + SUBR0);
+	uint32_t ip = read32(m_memory + SIPR0);
 
 	uint32_t dest = read32(socket + Sn_DIPR0);
 	int rtr = read16(m_memory + RTR0);
 	int mr = socket[Sn_MR];
+	bool udp = (mr & 0x0f) == Sn_MR_UDP;
 
-	if ((mr & 0x8f) == (Sn_MR_UDP | Sn_MR_MULT)) return true; // multi-cast
+	if (udp && (mr & Sn_MR_MULT)) return true; // multi-cast
 
-	if (m_device_type == dev_type::W5100S && (mr & 0x0f) == Sn_MR_UDP && (m_memory[MR2] & MR2_FARP))
+	// socket-less ARP doesn't handle broadcast addresses properly so handle them here.
+	if (dest == 0xffffffff || dest == (ip | ~subnet))
+	{
+		/* broadcast ip address */
+		memcpy(socket + Sn_DHAR0, ETHERNET_BROADCAST, 6);
+		m_sockets[sn].arp_ip_address = dest;
+		m_sockets[sn].arp_ok = true;
+		return true;
+	}
+
+	if (m_device_type == dev_type::W5100S)
+	{
+		int sn_rtr = read16(socket + Sn_RTR0);
+
+		if (sn_rtr) rtr = sn_rtr;
+
+		if (udp && (m_memory[MR2] & MR2_FARP))
+			m_sockets[sn].arp_ok = false;
+	}
+
+	if (m_device_type == dev_type::W5100S && udp && (m_memory[MR2] & MR2_FARP))
 		m_sockets[sn].arp_ok = false;
 
-	bool rv = find_mac(sn, dest, socket + Sn_DHAR0, rtr);
+
+	bool rv = find_mac(sn, dest, rtr);
 
 	if (!rv)
 		socket[Sn_SR] = Sn_SR_ARP;
@@ -2046,7 +2025,8 @@ bool w5100_device::find_mac(int sn)
 
 }
 
-bool w5100_device::find_mac(int sn, uint32_t dest, uint8_t *mac, int rtr)
+// used for socket + socket-less commands.
+bool w5100_device::find_mac(int sn, uint32_t dest, int rtr)
 {
 	uint32_t gateway = read32(m_memory + GAR0);
 	uint32_t subnet = read32(m_memory + SUBR0);
@@ -2055,16 +2035,7 @@ bool w5100_device::find_mac(int sn, uint32_t dest, uint8_t *mac, int rtr)
 	if (m_sockets[sn].arp_ok && m_sockets[sn].arp_ip_address == dest)
 		return true;
 
-	if (dest == 0xffffffff || dest == 0 || dest == (ip | ~subnet))
-	{
-		/* broadcast ip address */
-		memcpy(mac, ETHERNET_BROADCAST, 6);
-		m_sockets[sn].arp_ip_address = dest;
-		m_sockets[sn].arp_ok = true;
-		return true;
-	}
-
-	if ((dest & subnet) != (ip & subnet))
+	if ((dest & subnet) != (ip & subnet) && (dest & ~subnet) != 0)
 	{
 		dest = gateway;
 		if (m_sockets[sn].arp_ok && m_sockets[sn].arp_ip_address == dest)
