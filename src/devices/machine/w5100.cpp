@@ -2206,7 +2206,7 @@ void w5100_device::send_arp_request(uint32_t ip)
 // RFC 2113, IP Router Alert Option
 void w5100_device::send_igmp(int sn, bool connect)
 {
-	static const int MESSAGE_SIZE = 46 + 4;
+	static const int MESSAGE_SIZE = 46;
 	uint8_t message[MESSAGE_SIZE];
 
 	uint16_t crc;
@@ -2225,14 +2225,12 @@ void w5100_device::send_igmp(int sn, bool connect)
 
 	++m_identification;
 
-	int length = igmpv == 1 ? 20 + 8 : 24 + 8;
-	int offset = igmpv == 1 ? 34 : 38;
 
 	// ip header
-	message[14] = igmpv == 1 ? 0x45 : 0x46; // IPv4, length = 5*4
-	message[15] = 0; // TOS
-	message[16] = length >> 8; // total length
-	message[17] = length;
+	message[14] = 0x46; // IPv4, length = 6*4
+	message[15] = socket[Sn_TOS]; // TOS
+	message[16] = 32 >> 8; // total length
+	message[17] = 32;
 	message[18] = m_identification >> 8; // identification
 	message[19] = m_identification;
 	message[20] = 0x40; // flags - don't fragment
@@ -2244,21 +2242,18 @@ void w5100_device::send_igmp(int sn, bool connect)
 	memcpy(message + 26, m_memory + SIPR0, 4); // source ip
 	memcpy(message + 30, socket + Sn_DIPR0, 4); // destination ip
 
-	if (igmpv == 2)
-	{
-		// IP Option - Router Alert
-		message[32] = 0x94;
-		message[33] = 0x04;
-		message[34] = 0x00;
-		message[35] = 0x00;
-	}
+	// IP Option - Router Alert
+	message[34] = 0x94;
+	message[35] = 0x04;
+	message[36] = 0x00;
+	message[37] = 0x00;
 
 
-	message[offset + 0] = igmpv == 2 ? IGMP_TYPE_MEMBERSHIP_REPORT_V2 : IGMP_TYPE_MEMBERSHIP_REPORT_V1;
-	message[offset + 1] = 0; // max resp time
-	message[offset + 2] = 0; // checksum
-	message[offset + 3] = 0;
-	memcpy(message + offset + 4, socket + Sn_DIPR0, 4); // multicast address -- destination ip
+	message[38] = igmpv == 2 ? IGMP_TYPE_MEMBERSHIP_REPORT_V2 : IGMP_TYPE_MEMBERSHIP_REPORT_V1;
+	message[39] = 0; // max resp time
+	message[40] = 0; // checksum
+	message[41] = 0;
+	memcpy(message + 42, socket + Sn_DIPR0, 4); // multicast address -- destination ip
 
 	if (!connect)
 	{
@@ -2274,11 +2269,11 @@ void w5100_device::send_igmp(int sn, bool connect)
 	message[24] = crc >> 8;
 	message[25] = crc;
 
-	crc = util::internet_checksum_creator::simple(message + offset, 8);
-	message[offset + 2] = crc >> 8;
-	message[offset + 3] = crc;
+	crc = util::internet_checksum_creator::simple(message + 38, 8);
+	message[40] = crc >> 8;
+	message[41] = crc;
 
-	send(message, length + 14);
+	send(message, MESSAGE_SIZE);
 }
 
 
