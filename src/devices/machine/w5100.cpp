@@ -211,7 +211,7 @@ enum {
 	Sn_FRAGR1,
 	Sn_MR2,
 	Sn_KPALVTR,
-	/* 0x31 reserved */
+	Sn_TSR, /* "reserved", Socket Timer Status Register */
 	Sn_RTR0 = 0x32,
 	Sn_RTR1,
 	Sn_RCR,
@@ -2281,6 +2281,7 @@ void w5100_device::send_igmp(int sn, bool connect)
 void w5100_device::build_ipraw_header(int sn, uint8_t *buffer, int length)
 {
 	uint8_t *socket = m_memory + Sn_BASE + Sn_SIZE * sn;
+	uint16_t fragment = m_device_type == dev_type::W5100S ? read16(socket + Sn_FRAGR0) : 0;
 
 	//ethernet header
 	memcpy(buffer + 0, &socket[Sn_DHAR0], 6);
@@ -2299,8 +2300,8 @@ void w5100_device::build_ipraw_header(int sn, uint8_t *buffer, int length)
 	buffer[17] = length;
 	buffer[18] = m_identification >> 8; // identification
 	buffer[19] = m_identification;
-	buffer[20] = 0x40; // flags - don't fragment
-	buffer[21] = 0x00;
+	buffer[20] = fragment >> 8;
+	buffer[21] = fragment;
 	buffer[22] = socket[Sn_TTL];
 	buffer[23] = socket[Sn_PROTO];
 	buffer[24] = 0; // checksum...
@@ -2317,6 +2318,7 @@ void w5100_device::build_ipraw_header(int sn, uint8_t *buffer, int length)
 void w5100_device::build_udp_header(int sn, uint8_t *buffer, int length)
 {
 	uint8_t *socket = m_memory + Sn_BASE + Sn_SIZE * sn;
+	uint16_t fragment = m_device_type == dev_type::W5100S ? read16(socket + Sn_FRAGR0) : 0;
 
 	//ethernet header
 	memcpy(buffer + 0, &socket[Sn_DHAR0], 6);
@@ -2335,8 +2337,8 @@ void w5100_device::build_udp_header(int sn, uint8_t *buffer, int length)
 	buffer[17] = length;
 	buffer[18] = m_identification >> 8; // identification
 	buffer[19] = m_identification;
-	buffer[20] = 0x40; // flags - don't fragment
-	buffer[21] = 0x00;
+	buffer[20] = fragment >> 8;
+	buffer[21] = fragment;
 	buffer[22] = socket[Sn_TTL];
 	buffer[23] = IP_UDP;
 	buffer[24] = 0; // checksum...
