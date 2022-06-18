@@ -47,6 +47,9 @@ protected:
 
 private:
 
+	void write_socket_register(int sn, int offset, uint8_t value);
+	void write_general_register(int offset, uint8_t value);
+
 	void update_rmsr(uint8_t value);
 	void update_tmsr(uint8_t value);
 
@@ -106,6 +109,7 @@ private:
 
 	struct socket_info
 	{
+		int proto;
 		int rx_buffer_offset;
 		int rx_buffer_size;
 		int tx_buffer_offset;

@@ -3,29 +3,30 @@
 
 
 /*
-  WIZnet W5100
+	WIZnet W5100
 
-  Used in: Uthernet II (Apple II), Spectranet (ZX Spectrum)
+	Used in: Uthernet II (Apple II), Spectranet (ZX Spectrum)
 
-  Based on:
-  W5100, W5100S, W5200, W5500 datasheets
-  WIZnet ioLibrary Driver (https://github.com/Wiznet/ioLibrary_Driver)
-  https://docs.wiznet.io/Product/iEthernet/W5100/
-  Uthernet II User's and Programmer's Manual
+	Based on:
+	W5100, W5100S, W5200, W5500 datasheets
+	WIZnet ioLibrary Driver (https://github.com/Wiznet/ioLibrary_Driver)
+	https://docs.wiznet.io/Product/iEthernet/W5100/
+	Uthernet II User's and Programmer's Manual
 
-
-  0x0000-0x012f - common registers
-  0x0030-0x03ff - reserved
-  0x0400-0x7fff - socket registers
-  0x0800-0x3fff - reserved
-  0x4000-0x5fff - tx memory
-  0x6000-0x7fff - rx memory
+	0x0000-0x012f - common registers
+	0x0030-0x03ff - reserved
+	0x0400-0x7fff - socket registers
+	0x0800-0x3fff - reserved
+	0x4000-0x5fff - tx memory
+	0x6000-0x7fff - rx memory
 
  */
 
 /*
-TODO:
-- full W5100s support
+	Not supported:
+	- anything PPPoE related
+	- w5100s PHY, etc
+
 */
 
 #include "emu.h"
@@ -152,7 +153,7 @@ enum {
 	SLIMR,
 	SLIR,
 	/* 0x60-0x6a reserved */
-	CLKCKR = 0x70,
+	CLKLCKR = 0x70,
 	NETLCKR,
 	PHYLCKR,
 	/* 0x73-0x7f reserved */
@@ -211,7 +212,7 @@ enum {
 	Sn_FRAGR1,
 	Sn_MR2,
 	Sn_KPALVTR,
-	Sn_TSR, /* "reserved", Socket Timer Status Register */
+	Sn_TSR, /* "reserved", Socket Timer Status Register. */
 	Sn_RTR0 = 0x32,
 	Sn_RTR1,
 	Sn_RCR,
@@ -280,19 +281,21 @@ enum {
 	Sn_SR_CLOSED = 0x00,
 	Sn_SR_INIT = 0x13,
 	Sn_SR_LISTEN = 0x14,
+	Sn_SR_SYNSENT = 0x15,
+	Sn_SR_SYNRECV = 0x16,
 	Sn_SR_ESTABLISHED = 0x17,
+	Sn_SR_FIN_WAIT = 0x18,
+	Sn_SR_CLOSING = 0x1a,
+	Sn_SR_TIME_WAIT = 0x1b,
 	Sn_SR_CLOSE_WAIT = 0x1c,
+	Sn_SR_LAST_ACK = 0x1d,
+
 	Sn_SR_UDP = 0x22,
 	Sn_SR_IPRAW = 0x32,
 	Sn_SR_MACRAW = 0x42,
 	Sn_SR_PPPOE = 0x5f,
 
-	Sn_SR_SYNSENT = 0x15,
-	Sn_SR_SYNRECV = 0x16,
-	Sn_SR_FIN_WAIT = 0x18,
-	Sn_SR_CLOSING = 0x1a,
-	Sn_SR_TIME_WAIT = 0x18,
-	Sn_SR_LAST_ACK = 0x1d,
+	// n.b. SR_ARP only documented for w5100.
 	Sn_SR_ARP = 0x01,
 };
 
@@ -692,8 +695,8 @@ void w5100_device::device_reset()
 
 	if (m_device_type == dev_type::W5100S)
 	{
-		m_memory[MR] = 0x03;
-		m_memory[MR2] = 0x40;
+		m_memory[MR] = MR_AI | MR_IND;
+		m_memory[MR2] = MR2_IEN;
 		m_memory[PMRUR0] = 0xff;
 		m_memory[PMRUR1] = 0xff;
 		m_memory[PHYSR1] = 0x81;
@@ -788,7 +791,7 @@ void w5100_device::device_timer(emu_timer &timer, device_timer_id id, int param)
 
 		if (++m_sockets[sn].retry > rcr)
 		{
-			int proto = socket[Sn_MR] & 0x0f;
+			int proto = m_sockets[sn].proto;
 			uint8_t &sr = socket[Sn_SR];
 			switch(proto)
 			{
@@ -904,84 +907,175 @@ void w5100_device::write(uint16_t offset, uint8_t data)
 		}
 	}
 
+
 	offset &= 0x7fff;
+	LOGMASKED(LOG_WRITE, "write(0x%04x, 0x%02x)\n", offset, data);
+
 	if (offset < 0x4000)
 	{
 		offset &= 0x7ff;
-		if (offset < 0x400)
-			offset &= 0xff;
-	}
-
-	LOGMASKED(LOG_WRITE, "write(0x%04x, 0x%02x)\n", offset, data);
-
-	int sn = -1;
-	if (offset >= Sn_BASE && offset < Sn_BASE + Sn_SIZE * 4)
-		sn = (offset - Sn_BASE) / Sn_SIZE;
-
-	switch(offset)
-	{
-		case MR:
-			if (m_device_type == dev_type::W5100S)
-				data |= MR_AI | MR_IND;
-			break;
-
-		case IR:
-			/* interrupt bits 5-7 cleared by writing 1 to them; bits 0-3 cleared via Sn_IR register */
-			m_memory[IR] &= ~data;
-			update_ethernet_irq();
-			return;
-
-		case IR2:
-			if (m_device_type == dev_type::W5100S)
-			{
-				m_memory[IR2] &= ~data;
-				update_ethernet_irq();
-			}
-			return;
-
-		case SLIR:
-			if (m_device_type == dev_type::W5100S)
-			{
-				m_memory[SLIR] &= ~data;
-				update_ethernet_irq();
-			}
-			return;
-
-		case SLCR:
-			if (m_device_type == dev_type::W5100S)
-			{
-				sl_command(data);
-				return;
-			}
-			break;
-
-		case Sn_IR + Sn_BASE + (Sn_SIZE * 0):
-		case Sn_IR + Sn_BASE + (Sn_SIZE * 1):
-		case Sn_IR + Sn_BASE + (Sn_SIZE * 2):
-		case Sn_IR + Sn_BASE + (Sn_SIZE * 3):
-			m_memory[offset] &= ~data;
-			update_ethernet_irq();
-			return;
-
-		case Sn_CR + Sn_BASE + (Sn_SIZE * 0):
-		case Sn_CR + Sn_BASE + (Sn_SIZE * 1):
-		case Sn_CR + Sn_BASE + (Sn_SIZE * 2):
-		case Sn_CR + Sn_BASE + (Sn_SIZE * 3):
-			socket_command(sn, data);
-			return;
-
+		switch(offset >> 8)
+		{
+			case 0:
+			case 1:
+			case 2:
+			case 3:
+				write_general_register(offset & 0xff, data);
+				break;
+			case 4:
+			case 5:
+			case 6:
+			case 7:
+				write_socket_register((offset >> 8) & 0x03, offset & 0xff, data);
+				break;
+		}
+		return;
 	}
 
 	m_memory[offset] = data;
+}
+
+
+void w5100_device::write_socket_register(int sn, int offset, uint8_t data)
+{
+	uint8_t *socket = m_memory + Sn_BASE + sn * Sn_SIZE;
+
+	const bool W5100S = m_device_type == dev_type::W5100S;
+
+	switch(offset)
+	{
+		case Sn_MR:
+			socket[offset] = data;
+			if ((sn == 0) && (data & Sn_MR_MF) == Sn_MR_MF)
+				set_promisc(false);
+			break;
+
+		case Sn_PORT0:
+		case Sn_PORT1:
+		case Sn_PROTO:
+		case Sn_TOS:
+		case Sn_TTL:
+			/* these update immediately */
+			socket[offset] = data;
+			break;
+
+		case Sn_FRAGR0:
+		case Sn_FRAGR1:
+		case Sn_MR2:
+		case Sn_RTR0:
+		case Sn_RTR1:
+		case Sn_RCR:
+			if (W5100S)
+				socket[offset] = data;
+			break;
+
+		case Sn_DHAR0:
+		case Sn_DHAR1:
+		case Sn_DHAR2:
+		case Sn_DHAR3:
+		case Sn_DHAR4:
+		case Sn_DHAR5:
+		case Sn_DIPR0:
+		case Sn_DIPR1:
+		case Sn_DIPR2:
+		case Sn_DIPR3:
+		case Sn_DPORT0:
+		case Sn_DPORT1:
+		case Sn_MSSR0:
+		case Sn_MSSR1:
+		case Sn_TX_WR0:
+		case Sn_TX_WR1:
+		case Sn_RX_RD0:
+		case Sn_RX_RD1:
+			/* these don't update until a command (usually INIT, CONNECT, SEND, or RECV) is executed */
+			socket[offset + 0x80] = data;
+			break;
+
+		case Sn_IR:
+			/* write clears */
+			socket[offset] &= ~data;
+			update_ethernet_irq();
+			break;
+
+		case Sn_CR:
+			socket_command(sn, data);
+			break;
+
+		/* W5100S below */
+		case Sn_RX_BUF_SIZE:
+			if (W5100S)
+			{
+				// TODO
+			}
+			break;
+
+		case Sn_TX_BUF_SIZE:
+			// updates immediately. also updates FSR.
+			// invalid values set FSR=1
+			// updates do not update TXSR / RXSR 
+
+			if (W5100S)
+			{
+				// TODO
+			}
+			break;
+
+		case Sn_IMR:
+			if (W5100S)
+			{
+				socket[offset] = data;
+				update_ethernet_irq();
+			}
+			break;
+
+		case Sn_KPALVTR:
+			if (W5100S)
+			{
+				// TODO -- update TCP timer...
+				socket[offset] = data;
+			}
+			break;
+
+		default:
+			/* read-only */
+			break;
+	}
+
+}
+
+void w5100_device::write_general_register(int offset, uint8_t data)
+{
+	uint8_t *registers = m_memory;
+	const bool W5100S = m_device_type == dev_type::W5100S;
 
 	switch(offset)
 	{
 		case MR:
+			if (W5100S) data |= MR_AI | MR_IND;
+			registers[offset] = data;
 			if (data & MR_RST)
 			{
 				LOGMASKED(LOG_COMMAND, "software reset\n");
 				device_reset();
 			}
+			break;
+
+		case GAR0:
+		case GAR1:
+		case GAR2:
+		case GAR3:
+		case SUBR0:
+		case SUBR1:
+		case SUBR2:
+		case SUBR3:
+		case SIPR0:
+		case SIPR1:
+		case SIPR2:
+		case SIPR3:
+			// TODO - for w5100s, read-only when NETLCKR is locked.
+			for (int sn = 0; sn < 4; ++sn)
+				m_sockets[sn].arp_ok = false;
+			registers[offset] = data;
 			break;
 
 		case SHAR0:
@@ -990,50 +1084,129 @@ void w5100_device::write(uint16_t offset, uint8_t data)
 		case SHAR3:
 		case SHAR4:
 		case SHAR5:
+			registers[offset] = data;
 			set_mac(reinterpret_cast<char *>(&m_memory[SHAR0]));
 			break;
 
-		case IMR:
+		case INTPTMR0:
+		case INTPTMR1:
+			// TODO - interrupt pending timer support
+			if (W5100S)
+				registers[offset] = data;
+			break;
+
+		case IR:
+			registers[offset] &= ~data;
 			update_ethernet_irq();
 			break;
 
+		case IMR:
+			registers[offset] = data;
+			update_ethernet_irq();
+			break;
+
+		case RTR0:
+		case RTR1:
+		case RCR:
+		case PTIMER:
+		case PMAGIC:
+			registers[offset] = data;
+			break;
+
 		case RMSR:
+			registers[offset] = data;
 			update_rmsr(data);
 			break;
 
 		case TMSR:
+			registers[offset] = data;
 			update_tmsr(data);
 			break;
 
-		case Sn_MR + Sn_BASE:
-			// promisc bit only valid for socket 0.
-			// enabled when macraw socket is opened.
-			if ((data & Sn_MR_MF) == Sn_MR_MF)
-				set_promisc(false);
-			break;
-
-		case MR2:
-		case IMR2:
-		case SLIMR:
-		case Sn_IMR + Sn_BASE + (Sn_SIZE * 0):
-		case Sn_IMR + Sn_BASE + (Sn_SIZE * 1):
-		case Sn_IMR + Sn_BASE + (Sn_SIZE * 2):
-		case Sn_IMR + Sn_BASE + (Sn_SIZE * 3):
-			if (m_device_type == dev_type::W5100S)
+		case IR2:
+		case SLIR:
+			if (W5100S)
+			{
+				registers[offset] &= ~data;
 				update_ethernet_irq();
+			}
 			break;
 
-		case Sn_KPALVTR + Sn_BASE + (Sn_SIZE * 0):
-		case Sn_KPALVTR + Sn_BASE + (Sn_SIZE * 1):
-		case Sn_KPALVTR + Sn_BASE + (Sn_SIZE * 2):
-		case Sn_KPALVTR + Sn_BASE + (Sn_SIZE * 3):
-			if (m_device_type == dev_type::W5100S)
-				m_tcp[sn]->set_keep_alive_timer(5 * data);
+		case IMR2:
+		case MR2:
+		case SLIMR:
+			if (W5100S)
+			{
+				registers[offset] = data;
+				update_ethernet_irq();
+			}
+			break;
+
+		case PHAR0:
+		case PHAR1:
+		case PHAR2:
+		case PHAR3:
+		case PHAR4:
+		case PHAR5:
+		case PSIDR0:
+		case PSIDR1:
+		case PMRUR0:
+		case PMRUR1:
+		case PHYAR:
+		case PHYDIR0:
+		case PHYDIR1:
+		case PHYDOR0:
+		case PHYDOR1:
+		case PHYDIVR:
+		case PHYCR0:
+		case PHYCR1:
+
+		case SLRTR0:
+		case SLRTR1:
+		case SLRCR:
+		case SLIPR0:
+		case SLIPR1:
+		case SLIPR2:
+		case SLIPR3:
+		case PINGSEQR0:
+		case PINGSEQR1:
+		case PINGIDR0:
+		case PINGIDR1:
+			if (W5100S)
+				registers[offset] = data;
+			break;
+
+		case PHYACR:
+			if (W5100S)
+				/* unsupported */ ;
+			break;
+
+		case SLCR:
+			if (W5100S)
+				sl_command(data);
+			break;
+
+		case TCNTCLR:
+			if (W5100S)
+			{
+				registers[TCNTR0] = 0;
+				registers[TCNTR1] = 0;
+			}
+			break;
+
+		case CLKLCKR:
+		case NETLCKR:
+		case PHYLCKR:
+			/* write-only... */
+			if (W5100S)
+				/* unsupported */ ;
+			break;
+
+		default:
+			/* read-only / reserved */
 			break;
 	}
-
 }
-
 
 uint8_t w5100_device::read(uint16_t offset)
 {
@@ -1174,7 +1347,7 @@ void w5100_device::socket_command(int sn, int command)
 	if (sn < 0 || sn > 3) return;
 
 	uint8_t *socket = m_memory + Sn_BASE + (Sn_SIZE * sn);
-	//unsigned proto = socket[Sn_MR] & 0x0f;
+	//unsigned proto = m_sockets[sn].proto;
 	uint8_t &sr = socket[Sn_SR];
 	uint8_t mr = socket[Sn_MR];
 
@@ -1316,6 +1489,7 @@ void w5100_device::socket_open(int sn)
 	m_sockets[sn].reset();
 	m_tcp[sn]->abort();
 
+
 	if (VERBOSE & LOG_COMMAND)
 	{
 		char extra[32];
@@ -1354,17 +1528,22 @@ void w5100_device::socket_open(int sn)
 		);
 	}
 
+	uint16_t max_mss = 1472;
+
 	switch (proto)
 	{
 		case Sn_MR_TCP:
 			sr = Sn_SR_INIT;
+			max_mss = 1460;
 			break;
 		case Sn_MR_UDP:
 			sr = Sn_SR_UDP;
+			max_mss = 1472;
 			if (socket[Sn_MR] & Sn_MR_MULT)
 				send_igmp(sn, true);
 			break;
 		case Sn_MR_IPRAW:
+			max_mss = 1480;
 			sr = Sn_SR_IPRAW;
 			break;
 
@@ -1372,9 +1551,12 @@ void w5100_device::socket_open(int sn)
 			if (sn == 0)
 			{
 				sr = Sn_SR_MACRAW;
+				max_mss = 1514;
 				if ((socket[Sn_MR] & Sn_MR_MF) == 0)
 					set_promisc(true);
 			}
+			else
+				proto = 0;
 			break;
 
 		case Sn_MR_PPPoE: /* pppoe */
@@ -1386,7 +1568,28 @@ void w5100_device::socket_open(int sn)
 
 		case Sn_MR_CLOSED: /* closed */
 			break;
+
+		default:
+			proto = 0;
+			break;
 	}
+
+	m_sockets[sn].proto = proto;
+	if (m_device_type == dev_type::W5100S)
+	{
+		uint16_t rtr = read16(socket + Sn_RTR0 + 0x80);
+		int rcr = socket[Sn_RCR + 0x80];
+
+		if (!rtr) rtr = read16(m_memory + RTR0);
+		write16(socket + Sn_RTR0, rtr);
+
+		if (!rcr) rcr = m_memory[RCR];
+		socket[Sn_RCR] = rcr;
+	}
+
+	uint16_t mss = read16(socket + Sn_MSSR0 + 0x80);
+	if (mss == 0 || mss > max_mss) mss = max_mss;
+	write16(socket + Sn_MSSR0, mss);
 }
 
 void w5100_device::socket_close(int sn)
@@ -1438,7 +1641,7 @@ static void copy_out(uint8_t *dest, const uint8_t *src, int length, int dest_off
 void w5100_device::socket_send(int sn)
 {
 	uint8_t *socket = m_memory + Sn_BASE + (Sn_SIZE * sn);
-	unsigned proto = socket[Sn_MR] & 0x0f;
+	unsigned proto = m_sockets[sn].proto;
 
 
 	// if this is a UDP or IPRAW socket, possibly send an ARP
@@ -1458,6 +1661,8 @@ void w5100_device::socket_send(int sn)
 
 	int tx_buffer_offset = m_sockets[sn].tx_buffer_offset;
 	int tx_buffer_size = m_sockets[sn].tx_buffer_size;
+
+	// TODO - update send registers.
 
 	uint16_t read_ptr = (socket[Sn_TX_RD0] << 8) |  socket[Sn_TX_RD1];
 	uint16_t write_ptr = (socket[Sn_TX_WR0] << 8) |  socket[Sn_TX_WR1];
@@ -1496,14 +1701,28 @@ void w5100_device::socket_send_mac(int sn)
 
 	uint8_t *socket = m_memory + Sn_BASE + (Sn_SIZE * sn);
 	// uint8_t sr = socket[Sn_SR];
-	unsigned proto = socket[Sn_MR] & 0x0f;
+	unsigned proto = m_sockets[sn].proto;
+
+	/* update registers */
+
+	// TODO -- need to integrate with arp lookup.
+	for (int i = 0; i < 6; ++i)
+		socket[Sn_DHAR0 + i] = socket[Sn_DHAR0 + i + 0x80];
+	for (int i = 0; i < 4; ++i)
+		socket[Sn_DIPR0 + i] = socket[Sn_DIPR0 + i + 0x80];
+
+	socket[Sn_DPORT0] = socket[Sn_PORT0 + 0x80];
+	socket[Sn_DPORT1] = socket[Sn_PORT1 + 0x80];
+
+	socket[Sn_TX_WR0] = socket[Sn_TX_WR0 + 0x80];
+	socket[Sn_TX_WR1] = socket[Sn_TX_WR1 + 0x80];
 
 
 	int tx_buffer_offset = m_sockets[sn].tx_buffer_offset;
 	int tx_buffer_size = m_sockets[sn].tx_buffer_size;
 
-	uint16_t read_ptr = (socket[Sn_TX_RD0] << 8) |  socket[Sn_TX_RD1];
-	uint16_t write_ptr = (socket[Sn_TX_WR0] << 8) |  socket[Sn_TX_WR1];
+	uint16_t read_ptr = read16(socket + Sn_TX_RD0);
+	uint16_t write_ptr = read16(socket + Sn_TX_WR0);
 
 	read_ptr &= (tx_buffer_size - 1);
 	write_ptr &= (tx_buffer_size - 1);
@@ -1619,7 +1838,7 @@ void w5100_device::socket_recv(int sn)
 	// update RSR and trigger a RECV interrupt if data still pending.
 	socket[Sn_RX_RSR0] = size >> 8;
 	socket[Sn_RX_RSR1] = size & 0xff;
-	if ((socket[Sn_MR] & 0x0f) == Sn_MR_TCP)
+	if (m_sockets[sn].proto == Sn_MR_TCP)
 	{
 		tcp_receive(sn);
 	}
@@ -1748,7 +1967,7 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 	{
 		const uint8_t *socket = m_memory + Sn_BASE + sn * Sn_SIZE;
 		int sr = socket[Sn_SR];
-		int proto = socket[Sn_MR] & 0x0f;
+		int proto = m_sockets[sn].proto;
 
 		int port = read16(socket + Sn_PORT0);
 
@@ -1897,7 +2116,7 @@ void w5100_device::receive(int sn, const uint8_t *buffer, int length)
 	uint16_t write_ptr = (socket[Sn_RX_WR0] << 8) | socket[Sn_RX_WR1];
 	// uint16_t read_ptr = (socket[Sn_RX_RD0] << 8) | socket[Sn_RX_RD1];
 	// int sr = socket[Sn_SR];
-	int proto = socket[Sn_MR] & 0x0f;
+	int proto = m_sockets[sn].proto;
 
 	int mask = rx_buffer_size - 1;
 	write_ptr &= mask;
@@ -2007,7 +2226,7 @@ bool w5100_device::find_mac(int sn)
 	uint32_t dest = read32(socket + Sn_DIPR0);
 	int rtr = read16(m_memory + RTR0);
 	int mr = socket[Sn_MR];
-	bool udp = (mr & 0x0f) == Sn_MR_UDP;
+	bool udp = m_sockets[sn].proto == Sn_MR_UDP;
 
 	if (udp && (mr & Sn_MR_MULT)) return true; // multi-cast
 
@@ -2119,7 +2338,7 @@ void w5100_device::handle_arp_reply(const uint8_t *buffer, int length)
 	{
 		uint8_t *socket = m_memory + Sn_BASE + sn * Sn_SIZE;
 		uint8_t &sr = socket[Sn_SR];
-		int proto = socket[Sn_MR] & 0x0f;
+		int proto = m_sockets[sn].proto;
 		if (sr == Sn_SR_ARP)
 		{
 			if (m_sockets[sn].arp_ip_address == ip)
