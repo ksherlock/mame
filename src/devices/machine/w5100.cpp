@@ -2300,7 +2300,7 @@ void w5100_device::send_igmp(int sn, bool connect)
 void w5100_device::build_ipraw_header(int sn, uint8_t *buffer, int length)
 {
 	uint8_t *socket = m_memory + Sn_BASE + Sn_SIZE * sn;
-	uint16_t fragment = m_device_type == dev_type::W5100S ? read16(socket + Sn_FRAGR0) : 0;
+	uint16_t fragment = m_device_type == dev_type::W5100S ? read16(socket + Sn_FRAGR0) : 0x4000;
 
 	//ethernet header
 	memcpy(buffer + 0, &socket[Sn_DHAR0], 6);
@@ -2337,7 +2337,7 @@ void w5100_device::build_ipraw_header(int sn, uint8_t *buffer, int length)
 void w5100_device::build_udp_header(int sn, uint8_t *buffer, int length)
 {
 	uint8_t *socket = m_memory + Sn_BASE + Sn_SIZE * sn;
-	uint16_t fragment = m_device_type == dev_type::W5100S ? read16(socket + Sn_FRAGR0) : 0;
+	uint16_t fragment = m_device_type == dev_type::W5100S ? read16(socket + Sn_FRAGR0) : 0x4000;
 
 	//ethernet header
 	memcpy(buffer + 0, &socket[Sn_DHAR0], 6);
