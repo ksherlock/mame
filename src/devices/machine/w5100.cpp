@@ -267,6 +267,11 @@ enum {
 	Sn_CR_SEND_MAC = 0x21,
 	Sn_CR_SEND_KEEP = 0x22,
 	Sn_CR_RECV = 0x40,
+
+	// iolib header for w5100s
+	Sn_CR_IGMP_JOIN = 0x23,
+	Sn_CR_IGMP_LEAVE = 0x24,
+
 };
 
 
@@ -1171,6 +1176,7 @@ void w5100_device::socket_command(int sn, int command)
 	uint8_t *socket = m_memory + Sn_BASE + (Sn_SIZE * sn);
 	//unsigned proto = socket[Sn_MR] & 0x0f;
 	uint8_t &sr = socket[Sn_SR];
+	uint8_t mr = socket[Sn_MR];
 
 	switch(command)
 	{
@@ -1226,6 +1232,19 @@ void w5100_device::socket_command(int sn, int command)
 			if (sr == Sn_SR_ESTABLISHED || sr == Sn_SR_CLOSE_WAIT)
 				socket_send_keep(sn);
 			break;
+
+		case Sn_CR_IGMP_JOIN:
+			LOGMASKED(LOG_COMMAND, "Socket: %d: IGMP Join\n", sn);
+			if (m_device_type == dev_type::W5100S && sr == Sn_SR_UDP && mr & Sn_MR_MULT)
+				send_igmp(sn, true);
+			break;
+
+		case Sn_CR_IGMP_LEAVE:
+			LOGMASKED(LOG_COMMAND, "Socket: %d: IGMP Leave\n", sn);
+			if (m_device_type == dev_type::W5100S && sr == Sn_SR_UDP && mr & Sn_MR_MULT)
+				send_igmp(sn, false);
+			break;
+
 		default:
 			LOGMASKED(LOG_COMMAND, "Socket: %d: unknown command (0x%02x)\n", sn, command);
 
