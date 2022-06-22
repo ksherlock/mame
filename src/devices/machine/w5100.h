@@ -72,7 +72,7 @@ private:
 	void send_icmp_request();
 
 	bool socket_arp(int sn);
-	bool ip_arp(int sn, uint32_t dest, int rtr);
+	bool ip_arp(int sn, uint32_t dest, int rtr, int rcr);
 	void send_arp_request(uint32_t ip);
 
 	void handle_arp_request(const uint8_t *buffer, int length);
@@ -102,7 +102,17 @@ private:
 	required_device_array<tcpip_device, 4> m_tcp;
 	devcb_write_line m_irq_handler;
 
-	emu_timer *m_timers[5]{};
+
+	void tcp_send_segment(int sn, int flags, uint32_t, uint32_t);
+
+
+	/* timer pool */
+	void timer_reset(int param, int mask = -1);
+	emu_timer *timer_acquire(int param);
+	void timer_release(emu_timer *t);
+
+	std::vector<emu_timer *> m_timers;
+	std::vector<emu_timer *> m_free_timers;
 
 	uint8_t m_memory[0x8000]{};
 

@@ -615,9 +615,6 @@ void w5100_device::device_start()
 
 	m_irq_handler.resolve_safe();
 
-	// 1 extra timer for w5100s socket-less commmand.
-	for (int sn = 0; sn < 5; ++ sn)
-		m_timers[sn] = timer_alloc(sn);
 }
 
 
@@ -687,7 +684,13 @@ void w5100_device::device_reset()
 			socket[Sn_FRAGR0] = 0x40;
 		}
 
-		m_timers[sn]->reset();
+		for (auto t : m_timers)
+		{
+			t->reset();
+			t->set_param(0);
+		}
+		m_free_timers = m_timers;
+
 		// m_sockets[sn].reset();
 		m_tcp[sn]->force_close();
 	}
@@ -745,86 +748,133 @@ struct retransmit_item {
 };
 #endif
 
-void w5100_device::device_timer(emu_timer &timer, device_timer_id id, int param)
+// param & 0xff = socket, 5 = socket less command
+// param >> 8 = type
+enum {
+	TIMER_ARP = 0x0100,
+	TIMER_PING = 0x0200,
+	TIMER_TCP_KEEP_ALIVE = 0x0300,
+	TIMER_TCP_DELAYED_ACK = 0x0400,
+	TIMER_TCP_RESEND = 0x0500,
+	TIMER_TCP_2MSL = 0x0600,
+};
+
+emu_timer *w5100_device::timer_acquire(int param)
 {
-
-	int sn = id;
-
-
-	uint32_t ip = m_sockets[sn].arp_ip_address;
-
-	if (sn == 4)
+	if (!m_free_timers.empty())
 	{
-		// w5100s socket-less arp/ping
-		int rcr = m_memory[SLRCR];
+		auto t = m_free_timers.back();
+		m_free_timers.pop_back();
+		t->set_param(param);
+		return t;
+	}
+	auto t = timer_alloc(0);
+	m_timers.push_back(t);
+	t->set_param(param);
+	return t;
+}
 
-		if (++m_sockets[sn].retry > rcr)
-		{
-			LOGMASKED(LOG_ARP, "ARP timeout for %d.%d.%d.%d\n",
-				(ip >> 24) & 0xff, (ip >> 16) & 0xff,
-				(ip >> 8) & 0xff, (ip >> 0) & 0xff
-			);
+void w5100_device::timer_release(emu_timer *t)
+{
+	if (t)
+	{
+		t->reset();
+		t->set_param(0);
+		m_free_timers.push_back(t);
+	}
+}
 
-			timer.reset();
-			m_memory[SLIR] |= SLIR_TIMEOUT;
-			update_ethernet_irq();
-			return;
-		}
-		switch (m_sockets[sn].command)
+void w5100_device::timer_reset(int param, int mask)
+{
+	for (auto t : m_timers)
+	{
+		int p = t->param();
+		if (p && (p & mask) == param)
 		{
-			case SLCR_ARP:
-				send_arp_request(ip);
-				break;
-			case SLCR_PING:
-				if (m_sockets[sn].arp_ok)
-					send_icmp_request();
-				else
-					send_arp_request(ip);
-				break;
+			t->reset();
+			t->set_param(0);
+			m_free_timers.push_back(t);
 		}
 	}
-	else
+}
+
+
+void w5100_device::device_timer(emu_timer &timer, device_timer_id id, int param)
+{
+	int sn = param & 0xff;
+	int type = param & 0xff00;
+
+	if (param == 0 || sn > 5)
 	{
-		int rcr = 0;
-		uint8_t *socket = m_memory + Sn_BASE + sn * Sn_SIZE;
+		return;
+	}
 
-		if (m_device_type == dev_type::W5100S)
-			rcr = socket[Sn_RCR];
-		else
-			rcr = m_memory[RCR];
+	if (type == TIMER_ARP)
+	{
+		uint32_t ip = m_sockets[sn].arp_ip_address;
 
-		if (++m_sockets[sn].retry > rcr)
+		if (--m_sockets[sn].retry < 0)
 		{
-			int proto = m_sockets[sn].proto;
-			uint8_t &sr = socket[Sn_SR];
-
-			// TODO -- UDP / IPRAW need to update tx_rd and fsr.
-			switch(proto)
-			{
-				case Sn_MR_UDP:
-					sr = Sn_SR_UDP;
-					break;
-				case Sn_MR_IPRAW:
-					sr = Sn_SR_IPRAW;
-					break;
-				case Sn_MR_TCP:
-					sr = Sn_SR_CLOSED;
-					break;
-			}
-
 			LOGMASKED(LOG_ARP, "ARP timeout for %d.%d.%d.%d\n",
 				(ip >> 24) & 0xff, (ip >> 16) & 0xff,
 				(ip >> 8) & 0xff, (ip >> 0) & 0xff
 			);
+			timer_release(&timer);
+			if (sn == 5)
+			{
+				m_memory[SLIR] |= SLIR_TIMEOUT;
+			}
+			else
+			{
+				uint8_t *socket = m_memory + Sn_BASE + sn * Sn_SIZE;
+				int proto = m_sockets[sn].proto;
+				uint8_t &sr = socket[Sn_SR];
 
-			timer.reset();
-			socket[Sn_IR] |= Sn_IR_TIMEOUT;
-			update_ethernet_irq();
+				// TODO -- UDP / IPRAW need to update tx_rd and fsr.
+				switch(proto)
+				{
+					case Sn_MR_UDP:
+						sr = Sn_SR_UDP;
+						break;
+					case Sn_MR_IPRAW:
+						sr = Sn_SR_IPRAW;
+						break;
+					case Sn_MR_TCP:
+						sr = Sn_SR_CLOSED;
+						break;
+				}
+				socket[Sn_IR] |= Sn_IR_TIMEOUT;
+			}
+			update_ethernet_irq();				
+			return;
 		}
-		else
+		send_arp_request(ip);
+		return;
+	}
+
+	if (type == TIMER_PING)
+	{
+		uint32_t ip = m_sockets[sn].arp_ip_address;
+
+		// socket-less ping.
+		if (sn == 5)
 		{
-			send_arp_request(ip);
+			if (--m_sockets[sn].retry < 0)
+			{
+				LOGMASKED(LOG_ARP, "PING timeout for %d.%d.%d.%d\n",
+					(ip >> 24) & 0xff, (ip >> 16) & 0xff,
+					(ip >> 8) & 0xff, (ip >> 0) & 0xff
+				);
+
+				timer_release(&timer);
+				m_memory[SLIR] |= SLIR_TIMEOUT;
+				update_ethernet_irq();
+				return;				
+			}
+			send_icmp_request();
 		}
+		return;
+
 	}
 }
 
@@ -1336,7 +1386,7 @@ void w5100_device::sl_command(int command)
 			cr = command;
 			m_sockets[4].command = command;
 			m_sockets[4].arp_ok = false;
-			ip_arp(4, read32(m_memory + SLIPR0), read16(m_memory + SLRTR0));
+			ip_arp(4, read32(m_memory + SLIPR0), read16(m_memory + SLRTR0), m_memory[SLRCR]);
 			break;
 
 		default:
@@ -1490,7 +1540,8 @@ void w5100_device::socket_open(int sn)
 	socket[Sn_RX_RSR0] = 0;
 	socket[Sn_RX_RSR1] = 0;
 
-	m_timers[sn]->reset();
+	// m_timers[sn]->reset(); //
+	timer_reset(sn, 0xff);
 	m_sockets[sn].reset();
 	m_tcp[sn]->abort();
 
@@ -1610,7 +1661,8 @@ void w5100_device::socket_close(int sn)
 
 	m_sockets[sn].proto = 0;
 	socket[Sn_SR] = Sn_SR_CLOSED;
-	m_timers[sn]->reset();
+	timer_reset(sn, 0xff);
+	// m_timers[sn]->reset();
 	m_tcp[sn]->force_close();
 }
 
@@ -2045,7 +2097,8 @@ void w5100_device::recv_cb(u8 *buffer, int length)
 			{
 				m_memory[SLCR] = 0;
 				m_sockets[4].command = 0;
-				m_timers[4]->reset();
+				// m_timers[4]->reset();
+				timer_reset(TIMER_PING | 0x05);
 				m_memory[SLIR] |= SLIR_PING;
 				update_ethernet_irq();
 			}
@@ -2237,16 +2290,18 @@ bool w5100_device::socket_arp(int sn)
 		}
 	}
 	uint16_t rtr = read16(m_memory + RTR0);
+	int rcr = m_memory[RCR];
 
 	if (m_device_type == dev_type::W5100S)
 	{
 		rtr = read16(socket + Sn_RTR0);
+		rcr = socket[Sn_RCR];
 
 		if (proto == Sn_MR_UDP && (m_memory[MR2] & MR2_FARP))
 			m_sockets[sn].arp_ok = false;
 	}
 
-	bool rv = ip_arp(sn, dest, rtr);
+	bool rv = ip_arp(sn, dest, rtr, rcr);
 	// TODO - W5100S doesn't have SR_ARP status.
 	if (!rv)
 		socket[Sn_SR] = Sn_SR_ARP;
@@ -2256,7 +2311,7 @@ bool w5100_device::socket_arp(int sn)
 
 
 // used for socket + socket-less commands.
-bool w5100_device::ip_arp(int sn, uint32_t dest, int rtr)
+bool w5100_device::ip_arp(int sn, uint32_t dest, int rtr, int rcr)
 {
 	uint32_t gateway = read32(m_memory + GAR0);
 	uint32_t subnet = read32(m_memory + SUBR0);
@@ -2274,12 +2329,14 @@ bool w5100_device::ip_arp(int sn, uint32_t dest, int rtr)
 
 	m_sockets[sn].arp_ip_address = dest;
 	m_sockets[sn].arp_ok = false;
-	m_sockets[sn].retry = 0;
+	m_sockets[sn].retry = rcr;
 
+	// TODO -- verify RTR == 0.
 	/* Retry Timeout Register, 1 = 100us */
 	if (!rtr) rtr = 0x07d0;
 	attotime tm = attotime::from_usec(rtr * 100);
-	m_timers[sn]->adjust(tm, 0, tm);
+	auto t = timer_acquire(TIMER_ARP | sn);
+	t->adjust(tm, 0, tm);
 
 	send_arp_request(dest);
 	return false;
@@ -2310,17 +2367,27 @@ void w5100_device::handle_arp_reply(const uint8_t *buffer, int length)
 		{
 			memcpy(m_memory + SLPHAR0, arp + o_ARP_SHA, 6);
 
+			// should re-use timer ... oh well.
+			timer_reset(TIMER_ARP | 0x05);
+
 			m_sockets[4].arp_ok = true;
 			if (m_sockets[4].command == SLCR_ARP)
 			{
 				m_memory[SLCR] = 0;
-				m_timers[4]->reset();
+				// m_timers[4]->reset();
 				m_memory[SLIR] |= SLIR_ARP;
 				update_ethernet_irq();
 			}
 			else
 			{
-				m_sockets[4].retry = 0;
+				m_sockets[4].retry = m_memory[SLRCR];
+
+				uint16_t rtr = read16(m_memory + SLRTR0);
+				if (!rtr) rtr = 0x07d0;
+				attotime tm = attotime::from_usec(rtr * 100);
+
+				auto t = timer_acquire(TIMER_PING | 0x05);
+				t->adjust(tm, 0, tm);
 				send_icmp_request();	
 			}
 		}
@@ -2337,7 +2404,8 @@ void w5100_device::handle_arp_reply(const uint8_t *buffer, int length)
 			{
 				memcpy(socket + Sn_DHAR0, arp + o_ARP_SHA, 6);
 				m_sockets[sn].arp_ok = true;
-				m_timers[sn]->reset();
+				timer_reset(TIMER_ARP | sn);
+				// m_timers[sn]->reset();
 				switch(proto)
 				{
 					case Sn_MR_IPRAW:
