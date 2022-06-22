@@ -63,14 +63,16 @@ private:
 	void socket_send(int sn);
 	void socket_send_mac(int sn);
 	void socket_send_keep(int sn);
-	void socket_connect(int sn);
+	void socket_connect(int sn, bool arp=true);
 	void socket_disconnect(int sn);
+
+	void socket_send_common(int sn);
 
 	void sl_command(int command);
 	void send_icmp_request();
 
-	bool find_mac(int sn);
-	bool find_mac(int sn, uint32_t dest, int rtr);
+	bool socket_arp(int sn);
+	bool ip_arp(int sn, uint32_t dest, int rtr);
 	void send_arp_request(uint32_t ip);
 
 	void handle_arp_request(const uint8_t *buffer, int length);
