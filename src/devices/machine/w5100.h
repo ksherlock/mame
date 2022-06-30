@@ -2,11 +2,8 @@
 #ifndef MAME_MACHINE_W5100_H
 #define MAME_MACHINE_W5100_H
 
-#include "machine/tcpip.h"
 
-
-
-class w5100_device : public device_t, public device_network_interface
+class w5100_base_device : public device_t, public device_network_interface
 {
 public:
 
@@ -16,8 +13,6 @@ public:
 
 	auto irq_handler() { return m_irq_handler.bind(); }
 
-	w5100_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
-
 protected:
 
 	enum class dev_type {
@@ -25,9 +20,8 @@ protected:
 		W5100S
 	};
 
-	//w5100_device_base(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
-	w5100_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, dev_type device_type);
+	w5100_base_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock, dev_type device_type);
 
 	virtual void device_start() override;
 	virtual void device_reset() override;
@@ -37,18 +31,15 @@ protected:
 	virtual void device_post_load() override;
 
 
-
 	virtual void recv_cb(u8 *buffer, int length) override;
-	// virtual void send_complete_cb(int result) override;
-	// virtual int recv_start_cb(u8 *buf, int length) override;
-	// virtual void recv_complete_cb(int result) override;
+
 
 	const dev_type m_device_type;
 
 private:
 
 	void write_socket_register(int sn, int offset, uint8_t value);
-	void write_general_register(int offset, uint8_t value);
+	void write_common_register(int offset, uint8_t value);
 
 	void update_rmsr(uint8_t value);
 	void update_tmsr(uint8_t value);
@@ -83,39 +74,42 @@ private:
 
 	void receive(int sn, const uint8_t *buffer, int length);
 
-	void build_ethernet_header(int sn, uint8_t *buffer, int length);
-	void build_ipraw_header(int sn, uint8_t *buffer, int length);
-	void build_udp_header(int sn, uint8_t *buffer, int length);
-
-	void tcp_state_change(int sn, tcpip_device::tcp_state new_state, tcpip_device::tcp_state old_state);
-	// void tcp_event(int sn, tcpip_device::tcp_event event);
-	void tcp_receive(int sn);
-	void tcp_send_complete(int sn);
-	void tcp_receive_ready(int sn);
-
+	void build_ethernet_header(int sn, uint8_t *buffer);
+	void build_ipraw_header(int sn, uint8_t *buffer, int data_length);
+	void build_udp_header(int sn, uint8_t *buffer, int data_length);
+	void build_tcp_header(int sn, uint8_t *buffer, int data_length, int flags, uint32_t seq, uint32_t ack);
 	void dump_bytes(const uint8_t *buffer, int length);
 
 	uint16_t m_idm = 0;
 	uint16_t m_identification = 0;
 	uint32_t m_irq_state = 0;
 
-	required_device_array<tcpip_device, 4> m_tcp;
 	devcb_write_line m_irq_handler;
 
-
+	/* tcp functions */
+	void tcp_segment(int sn, const uint8_t *buffer, int length);
 	void tcp_send_segment(int sn, int flags, uint32_t, uint32_t);
-
+	void tcp_reset(const uint8_t *buffer, int length);
+	void tcp_send(int sn, bool retransmit);
+	void tcp_disconnect(int sn, bool irq);
 
 	/* timer pool */
 	void timer_reset(int param, int mask = -1);
 	emu_timer *timer_acquire(int param);
 	void timer_release(emu_timer *t);
 
+	void tcp_timer(int sn);
+
 	std::vector<emu_timer *> m_timers;
 	std::vector<emu_timer *> m_free_timers;
 
 	uint8_t m_memory[0x8000]{};
 
+	uint8_t m_tx_buffer[0x2000]{};
+	uint8_t m_rx_buffer[0x2000]{};
+
+	uint8_t m_common_registers[0x100]{};
+	uint8_t m_socket_registers[5][0x100]{};
 
 	//struct socket_info *m_socket_info = nullptr;
 
@@ -135,11 +129,42 @@ private:
 		int command;
 		bool arp_ok;
 
-		void reset() {
+
+		// no support for urgent ptr or send window.
+
+		// tcp variables
+		uint32_t snd_una; // oldest unack seq number
+		uint32_t snd_nxt; // next seq number to send
+		// uint32_t snd_wnd; // send window
+		// uint32_t snd_up;  // send urgent pointer
+		// uint32_t snd_wl1; // seg seq of last window update
+		// uint32_t snd_wl2; // seg ack of last window update
+		uint32_t iss;     // initial send seq
+
+		uint32_t rcv_nxt; // receive next
+		uint32_t rcv_wnd; // receive window
+		// uint32_t rcv_up;  // receive urgent ptr
+		uint32_t irs;     // initial recv seq number
+
+		void reset()
+		{
 			retry = 0;
 			arp_ip_address = 0;
 			command = 0;
 			arp_ok = false;
+		}
+
+		void reset_tcp()
+		{
+			snd_una = 0;
+			snd_nxt = 0;
+			// snd_wnd = 0;
+			// snd_up = 0;
+			iss = 0;
+			rcv_nxt = 0;
+			rcv_wnd = 0;
+			// rcv_up = 0;
+			irs = 1;
 		}
 	};
 
@@ -148,8 +173,14 @@ private:
 
 };
 
+class w5100_device : public w5100_base_device
+{
+public:
+	w5100_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
+};
 
-class w5100s_device : public w5100_device
+
+class w5100s_device : public w5100_base_device
 {
 public:
 	w5100s_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
