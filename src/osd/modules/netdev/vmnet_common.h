@@ -93,12 +93,9 @@ static int is_unicast(const uint8_t *packet, unsigned size) {
   return (*packet & 0x01) == 0;
 }
 
-#if 0
-// unused.
-static int is_multicast(const uint8_t *packet, unsigned size) {
+[[maybe_unused]] static int is_multicast(const uint8_t *packet, unsigned size) {
   return (*packet & 0x01) == 0x01 && !is_broadcast(packet, size);
 }
-#endif
 
 static int is_dhcp_out(const uint8_t *packet, unsigned size) {
   static uint8_t cookie[] = { 0x63, 0x82, 0x53, 0x63 };
@@ -137,9 +134,7 @@ static int is_dhcp_in(const uint8_t *packet, unsigned size) {
   ;
 }
 
-#if 0
-// unused.
-static unsigned ip_checksum(const uint8_t *packet) {
+[[maybe_unused]] static unsigned ip_checksum(const uint8_t *packet) {
   unsigned x = 0;
   unsigned i;
   for (i = 0; i < ip_data; i += 2) {
@@ -153,7 +148,32 @@ static unsigned ip_checksum(const uint8_t *packet) {
   x &= 0xffff;
   return ~x & 0xffff;
 }
-#endif
+
+[[maybe_unused]] static void recalc_ip_checksum(uint8_t *packet, unsigned size)
+{
+  unsigned x = 0;
+  unsigned i;
+
+  if (size < eth_data + ip_data) return;
+
+  packet[eth_data+ip_header_cksum+0] = 0;
+  packet[eth_data+ip_header_cksum+1] = 0;
+
+  for (i = 0; i < ip_data; i += 2) {
+    x += packet[eth_data + i + 0 ] << 8;
+    x += packet[eth_data + i + 1];
+  }
+
+  /* add the carry */
+  x += x >> 16;
+  x = ~x & 0xffff;
+
+  packet[eth_data+ip_header_cksum+0] = x >> 8;
+  packet[eth_data+ip_header_cksum+1] = x;
+
+}
+
+
 
 static void recalc_udp_checksum(uint8_t *packet, unsigned size) {
   if (size < eth_data + ip_data + udp_data) return;
@@ -197,6 +217,7 @@ static void recalc_udp_checksum(uint8_t *packet, unsigned size) {
 
   sum += sum >> 16;
   sum = ~sum & 0xffff;
+  if (sum == 0) sum = 0xffff;
 
   packet[eth_data+ip_data+udp_cksum+0] = (sum >> 8) & 0xff;
   packet[eth_data+ip_data+udp_cksum+1] = (sum >> 0) & 0xff;
@@ -227,8 +248,7 @@ static void fix_incoming_packet(uint8_t *packet, unsigned size, const char real_
 
 static void fix_outgoing_packet(uint8_t *packet, unsigned size, const char real_mac[6], const char fake_mac[6]) {
 
-
-
+#define FIX_IP65_DHCP 1
   if (memcmp(packet + 6, fake_mac, 6) == 0)
     memcpy(packet + 6, real_mac, 6);
 
@@ -244,6 +264,16 @@ static void fix_outgoing_packet(uint8_t *packet, unsigned size, const char real_
 
     if (!memcmp(packet + 70, fake_mac, 6)) {
       memcpy(packet + 70, real_mac, 6);
+
+      /* work-around for old IP65 bug where ip address used before it should be */
+      #ifdef FIX_IP65_DHCP
+      if (size > 284 && packet[282] == 0x35 && packet[283] == 1 && packet[284] <= dhcp_request)
+      {
+        memset(packet + 14 + ip_src, 0, 4);
+        recalc_ip_checksum(packet, size);
+      }
+      #endif
+
       recalc_udp_checksum(packet, size);
     }
     return;
