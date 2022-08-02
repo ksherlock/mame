@@ -596,9 +596,10 @@ static int verify_ip(const uint8_t *buffer, int length)
 			util::internet_checksum_creator cr;
 			cr.append(header, sizeof(header));
 			cr.append(data, length);
-			uint16_t xcrc = cr.finish();
-			if (xcrc == 0) xcrc = 0xffff;
-			if (crc != xcrc) return false;
+			if (cr.finish() != 0) return false;
+			// uint16_t xcrc = cr.finish();
+			// if (xcrc == 0) xcrc = 0xffff;
+			// if (crc != xcrc) return false;
 		}
 	}
 	else if (proto == IP_PROTOCOL_TCP)
@@ -3136,29 +3137,11 @@ void w5100_base_device::build_udp_header(int sn, uint8_t *buffer, int data_lengt
 	udp_ptr[0] = socket[Sn_PORT0]; // source port
 	udp_ptr[1] = socket[Sn_PORT1];
 	udp_ptr[2] = socket[Sn_DPORT0]; // dest port
-	udp_ptr[3] = socket[Sn_DPORT0];
+	udp_ptr[3] = socket[Sn_DPORT1];
 	write16(udp_ptr + 4, length - ip_header_length);
 	udp_ptr[6] = 0; // checksum - optional
 	udp_ptr[7] = 0;
 
-#if 0
-	uint16_t crc = util::internet_checksum_creator::simple(ip_ptr, ip_header_length);
-	write16(ip_ptr + o_IP_CHECKSUM, crc);
-
-
-	util::internet_checksum_creator cc;
-
-	// ip pseudo header.
-	cc.append(m_common_registers + SIPR0, 4); // source ip
-	cc.append(socket + Sn_DIPR0, 4); // dest ip
-	cc.append(static_cast<uint16_t>(IP_PROTOCOL_UDP));
-	cc.append(static_cast<uint16_t>(length));
-	cc.append(udp_ptr, udp_header_length + data_length);
-
-	crc = cc.finish();
-	if (crc == 0) crc = 0xffff;
-	write16(udp_ptr + o_UDP_CHECKSUM, crc);
-#endif
 	udp_checksum(ip_ptr, ip_header_length, udp_header_length + data_length);
 }
 
@@ -3221,23 +3204,6 @@ void w5100_base_device::build_tcp_header(int sn, uint8_t *buffer, int data_lengt
 	}
 
 	tcp_checksum(ip_ptr, ip_header_length, tcp_header_length + data_length);
-#if 0
-	uint16_t crc = util::internet_checksum_creator::simple(ip_ptr, ip_header_length);
-	write16(ip_ptr + o_IP_CHECKSUM, crc);
-
-
-	util::internet_checksum_creator cc;
-
-	// ip pseudo header.
-	cc.append(m_common_registers + SIPR0, 4); // source ip
-	cc.append(socket + Sn_DIPR0, 4); // dest ip
-	cc.append(static_cast<uint16_t>(IP_PROTOCOL_TCP));
-	cc.append(static_cast<uint16_t>(length));
-	cc.append(tcp_ptr, tcp_header_length + data_length);
-
-	crc = cc.finish();
-	write16(tcp_ptr + o_TCP_CHECKUSM, crc);
-#endif
 }
 
 void w5100_base_device::handle_icmp_request(uint8_t *buffer, int length)
