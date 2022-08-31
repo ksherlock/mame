@@ -1,8 +1,8 @@
 
 
 DRIVERS = apple/apple1.cpp apple/apple2.cpp apple/apple3.cpp apple/apple2e.cpp apple/apple2gs.cpp \
-	apple/superga2.cpp apple/mac.cpp apple/mac128.cpp apple/maciivx.cpp apple/maclc3.cpp \
-	agat/agat.cpp \
+	apple/superga2.cpp apple/mac.cpp apple/mac128.cpp apple/maciivx.cpp apple/maclc.cpp apple/maclc3.cpp \
+	agat/agat.cpp vtech/laser3k.cpp \
 	virtual/vgmplay.cpp
 
 SOURCES = $(subst $(space),$(comma),$(addprefix src/mame/,$(DRIVERS)))
