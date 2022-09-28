@@ -2,6 +2,9 @@
 #ifndef MAME_MACHINE_W5100_H
 #define MAME_MACHINE_W5100_H
 
+#pragma once
+
+#include "dinetwork.h"
 
 class w5100_base_device : public device_t, public device_network_interface
 {
