@@ -4,6 +4,7 @@
 #include "emu.h"
 #include "natkeyboard.h"
 #include "dipty.h"
+#include "dinetwork.h"
 #include "emuopts.h"
 
 #include "modules/lib/osdobj_common.h"
