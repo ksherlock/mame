@@ -45,6 +45,99 @@ std::optional<meta_name> meta_data::from_entry_name(const char *name)
 	return {};
 }
 
+#if __APPLE__ && __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ < 101400
+
+namespace {
+	template <class V>
+	const std::string &v_string(const V &value) { return *std::get_if<std::string>(&value); }
+
+	template <class V>
+	util::arbitrary_datetime v_date(const V &value) { return *std::get_if<util::arbitrary_datetime>(&value); }
+
+	template <class V>
+	bool v_flag(const V &value) { return *std::get_if<bool>(&value); }
+
+	template <class V>
+	uint64_t v_number(const V &value) { return *std::get_if<uint64_t>(&value); }
+
+
+}
+
+meta_type meta_value::type() const
+{
+	// MacOS < 10.14 doesn't have a complete std::variant
+	// this is only used in the floppy tool so it doesn't affect Ample MAME.
+	// std::variant<std::string, uint64_t, bool, util::arbitrary_datetime> value;
+	switch(value.index())
+	{
+		case 0: return meta_type::string;
+		case 1: return meta_type::number;
+		case 2: return meta_type::flag;
+		case 3: return meta_type::date;
+		default: return meta_type::number;
+	}
+}
+
+util::arbitrary_datetime meta_value::as_date() const
+{
+	util::arbitrary_datetime result = { 0, };
+
+	switch(value.index()) {
+		case 0:
+			sscanf(v_string(value).c_str(), "%d-%d-%d %d:%d:%d", &result.year, &result.month, &result.day_of_month, &result.hour, &result.minute, &result.second);
+			break;
+		case 3:return v_date(value);
+	}
+	return result;
+}
+
+
+bool meta_value::as_flag() const
+{
+	bool result = false;
+
+	switch(value.index()) {
+		case 0: {
+			const auto &s = v_string(value);
+			return !s.empty() && s != "f";
+		}
+		case 2: return v_flag(value);
+	}
+	return result;
+}
+
+std::string meta_value::as_string() const
+{
+	switch(value.index())
+	{
+		case 0: return v_string(value);
+		case 1: return util::string_format("0x%x", v_number(value));
+		case 2: return v_flag(value) ? "t" : "f";
+		case 3: {
+			auto dt = v_date(value);
+			return util::string_format("%04d-%02d-%02d %02d:%02d:%02d",
+ 				dt.year, dt.month, dt.day_of_month,
+ 				dt.hour, dt.minute, dt.second);
+		}
+		default: return util::string_format("0x%x", v_number(value));
+	}
+}
+
+uint64_t meta_value::as_number() const
+{
+	switch(value.index())
+	{
+		case 0: return std::stoull(v_string(value));
+		case 1: return v_number(value);
+		case 2: return 0;
+		case 3: return 0;
+		case 4: return 0;
+		default: return 0;
+	}
+}
+
+#else
+
 template <class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
 template <class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
@@ -127,5 +220,6 @@ uint64_t meta_value::as_number() const
 	return result;
 }
 
+#endif
 
 } // namespace fs
