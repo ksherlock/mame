@@ -207,6 +207,27 @@ namespace bgfx { namespace mtl
 		MTLSamplerMipFilterNearest,
 	};
 
+
+#if __APPLE__ && __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ < 101500
+
+typedef NS_ENUM(uint8, MTLTextureSwizzle) {
+	MTLTextureSwizzleZero = 0,
+	MTLTextureSwizzleOne = 1,
+	MTLTextureSwizzleRed = 2,
+	MTLTextureSwizzleGreen = 3,
+	MTLTextureSwizzleBlue = 4,
+	MTLTextureSwizzleAlpha = 5,
+};
+
+typedef struct MTLTextureSwizzleChannels {
+	MTLTextureSwizzle red;
+	MTLTextureSwizzle green;
+	MTLTextureSwizzle blue;
+	MTLTextureSwizzle alpha;
+} MTLTextureSwizzleChannels;
+
+#endif
+
 	struct TextureFormatInfo
 	{
 		MTLPixelFormat            m_fmt;
@@ -320,12 +341,21 @@ namespace bgfx { namespace mtl
 		{ MTLPixelFormatRGBA32Sint,                     MTLPixelFormatInvalid,                       MTLReadWriteTextureTier2,    { $R, $G, $B, $A }, true  }, // RGBA32I
 		{ MTLPixelFormatRGBA32Uint,                     MTLPixelFormatInvalid,                       MTLReadWriteTextureTier2,    { $R, $G, $B, $A }, true  }, // RGBA32U
 		{ MTLPixelFormatRGBA32Float,                    MTLPixelFormatInvalid,                       MTLReadWriteTextureTier2,    { $R, $G, $B, $A }, true  }, // RGBA32F
+#if __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ < 110000
+		{ MTLPixelFormatInvalid,                        MTLPixelFormatInvalid,                       MTLReadWriteTextureTierNone, { $R, $G, $B, $A }, true  }, // B5G6R5
+		{ MTLPixelFormatInvalid,                        MTLPixelFormatInvalid,                       MTLReadWriteTextureTierNone, { $B, $G, $R, $A }, true  }, // R5G6B5
+		{ MTLPixelFormatInvalid,                        MTLPixelFormatInvalid,                       MTLReadWriteTextureTierNone, { $G, $B, $A, $R }, true  }, // BGRA4
+		{ MTLPixelFormatInvalid,                        MTLPixelFormatInvalid,                       MTLReadWriteTextureTierNone, { $A, $B, $G, $R }, true  }, // RGBA4
+		{ MTLPixelFormatInvalid,                        MTLPixelFormatInvalid,                       MTLReadWriteTextureTierNone, { $R, $G, $B, $A }, true  }, // BGR5A1
+		{ MTLPixelFormatInvalid,                        MTLPixelFormatInvalid,                       MTLReadWriteTextureTierNone, { $B, $G, $R, $A }, true  }, // RGB5A1
+#else
 		{ MTLPixelFormatB5G6R5Unorm,                    MTLPixelFormatInvalid,                       MTLReadWriteTextureTierNone, { $R, $G, $B, $A }, true  }, // B5G6R5
 		{ MTLPixelFormatB5G6R5Unorm,                    MTLPixelFormatInvalid,                       MTLReadWriteTextureTierNone, { $B, $G, $R, $A }, true  }, // R5G6B5
 		{ MTLPixelFormatABGR4Unorm,                     MTLPixelFormatInvalid,                       MTLReadWriteTextureTierNone, { $G, $B, $A, $R }, true  }, // BGRA4
 		{ MTLPixelFormatABGR4Unorm,                     MTLPixelFormatInvalid,                       MTLReadWriteTextureTierNone, { $A, $B, $G, $R }, true  }, // RGBA4
 		{ MTLPixelFormatBGR5A1Unorm,                    MTLPixelFormatInvalid,                       MTLReadWriteTextureTierNone, { $R, $G, $B, $A }, true  }, // BGR5A1
 		{ MTLPixelFormatBGR5A1Unorm,                    MTLPixelFormatInvalid,                       MTLReadWriteTextureTierNone, { $B, $G, $R, $A }, true  }, // RGB5A1
+#endif
 		{ MTLPixelFormatRGB10A2Unorm,                   MTLPixelFormatInvalid,                       MTLReadWriteTextureTierNone, { $R, $G, $B, $A }, true  }, // RGB10A2
 		{ MTLPixelFormatRG11B10Float,                   MTLPixelFormatInvalid,                       MTLReadWriteTextureTierNone, { $R, $G, $B, $A }, true  }, // RG11B10F
 		{ MTLPixelFormatInvalid,                        MTLPixelFormatInvalid,                       MTLReadWriteTextureTierNone, { $R, $G, $B, $A }, false }, // UnknownDepth
@@ -551,6 +581,7 @@ BX_STATIC_ASSERT(BX_COUNTOF(s_accessNames) == Access::Count, "Invalid s_accessNa
 			m_screenshotBlitRenderPipelineState         = m_device.newRenderPipelineStateWithDescriptor(m_renderPipelineDescriptor);
 
 			{
+#if __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ >= 101500
 				if ([m_device respondsToSelector: @selector(supportsFamily:)])
 				{
 					if ([m_device supportsFamily: MTLGPUFamily(1004) /*MTLGPUFamilyApple4*/])
@@ -575,6 +606,7 @@ BX_STATIC_ASSERT(BX_COUNTOF(s_accessNames) == Access::Count, "Invalid s_accessNa
 						}
 					}
 				}
+#endif
 
 #if BX_PLATFORM_OSX
 				if (0 == g_caps.vendorId)
@@ -2917,7 +2949,9 @@ BX_STATIC_ASSERT(BX_COUNTOF(s_accessNames) == Access::Count, "Invalid s_accessNa
 			desc.mipmapLevelCount = ti.numMips;
 			desc.sampleCount      = 1;
 			desc.arrayLength      = ti.numLayers;
+#if __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ >= 101500
 			desc.swizzle          = tfi.m_mapping;
+#endif
 
 			if (s_renderMtl->m_iOS9Runtime
 			||  s_renderMtl->m_macOS11Runtime)
