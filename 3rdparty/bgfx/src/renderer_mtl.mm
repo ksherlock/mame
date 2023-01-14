@@ -210,6 +210,7 @@ namespace bgfx { namespace mtl
 
 #if __APPLE__ && __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ < 101500
 
+#define MTLTextureSwizzle $MTLTextureSwizzle
 typedef NS_ENUM(uint8, MTLTextureSwizzle) {
 	MTLTextureSwizzleZero = 0,
 	MTLTextureSwizzleOne = 1,
@@ -219,6 +220,7 @@ typedef NS_ENUM(uint8, MTLTextureSwizzle) {
 	MTLTextureSwizzleAlpha = 5,
 };
 
+#define MTLTextureSwizzleChannels $MTLTextureSwizzleChannels
 typedef struct MTLTextureSwizzleChannels {
 	MTLTextureSwizzle red;
 	MTLTextureSwizzle green;
