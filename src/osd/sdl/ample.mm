@@ -8,6 +8,7 @@
 #include "emuopts.h"
 
 #include "modules/lib/osdobj_common.h"
+#include "sdl/osdsdl.h"
 #include "sdl/window.h"
 
 #include <cstdio>
@@ -147,8 +148,8 @@ enum {
 					[b setEnabled: YES];
 				}
 				#endif
-				if (!osd_common_t::s_window_list.empty()) {
-					auto window = osd_common_t::s_window_list.front();
+				if (!osd_common_t::window_list().empty()) {
+					auto &window = osd_common_t::window_list().front();
 					[b setState: window->fullscreen() ? NSControlStateValueOn : NSControlStateValueOff];
 				}
 				break;
@@ -180,8 +181,8 @@ enum {
 }
 
 -(void)toggleFullScreen:(id)sender {
-	for (auto win : osd_common_t::s_window_list)
-		std::static_pointer_cast<sdl_window_info>(win)->toggle_full_screen();
+	for (auto &win : osd_common_t::window_list())
+		dynamic_cast<sdl_window_info &>(*win).toggle_full_screen();
 
 	[self updateButtons];
 }
