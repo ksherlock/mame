@@ -44,7 +44,7 @@ public:
 	}
 	virtual ~vmnet_module() {}
 
-	virtual int init(const osd_options &options);
+	virtual int init(osd_interface &osd, const osd_options &options);
 	virtual void exit();
 
 	virtual bool probe() {
@@ -255,7 +255,7 @@ static CREATE_NETDEV(create_vmnet)
 	return dynamic_cast<osd_netdev *>(dev);
 }
 
-int vmnet_module::init(const osd_options &options) {
+int vmnet_module::init(osd_interface &osd, const osd_options &options) {
 	add_netdev("vmnet", "VM Network Device", create_vmnet);
 	return 0;
 }
