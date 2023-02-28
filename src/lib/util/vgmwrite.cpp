@@ -9,6 +9,7 @@
 #pragma GCC diagnostic ignored "-Wunused-function"
 
 #include "../../emu/emu.h"
+#include "../../emu/main.h"
 #include "../../emu/emuopts.h"
 #include "../../emu/softlist.h"
 #include "osdcomm.h"
