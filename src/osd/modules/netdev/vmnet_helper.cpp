@@ -58,7 +58,7 @@ public:
 	}
 	virtual ~vmnet_helper_module() {}
 
-	virtual int init(const osd_options &options);
+	virtual int init(osd_interface &osd, const osd_options &options);
 	virtual void exit();
 
 	virtual bool probe() {
@@ -547,7 +547,7 @@ static CREATE_NETDEV(create_vmnet_helper)
 	return dynamic_cast<osd_netdev *>(dev);
 }
 
-int vmnet_helper_module::init(const osd_options &options) {
+int vmnet_helper_module::init(osd_interface &osd, const osd_options &options) {
 	// fprintf(stderr, "%s\n", __func__);
 	add_netdev("vmnet_helper", "VM Network Device (H)", create_vmnet_helper);
 	return 0;
