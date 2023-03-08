@@ -411,6 +411,9 @@ project ("osd_" .. _OPTIONS["osd"])
 		files {
 			MAME_DIR .. "src/osd/sdl/ample.mm",
 		}
+		includedirs {
+			MAME_DIR .. "src/frontend/mame",
+		}
 	end
 
 project ("ocore_" .. _OPTIONS["osd"])
