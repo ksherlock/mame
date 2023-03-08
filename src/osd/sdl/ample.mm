@@ -7,6 +7,9 @@
 #include "dinetwork.h"
 #include "emuopts.h"
 
+#include "ui/uimain.h"
+#include "ui/ui.h"
+
 #include "modules/lib/osdobj_common.h"
 #include "sdl/osdsdl.h"
 #include "sdl/window.h"
@@ -78,7 +81,8 @@ enum {
 		return YES;
 	}
 	if (cmd == @selector(toggleKeyboard:)) {
-		[menuItem setState: _machine->ui_active() ? NSControlStateValueOn : NSControlStateValueOff];
+		mame_ui_manager *ui = dynamic_cast<mame_ui_manager *>(&_machine->ui());
+		[menuItem setState: ui->ui_active() ? NSControlStateValueOn : NSControlStateValueOff];
 		return YES;
 	}
 	if (cmd == @selector(toggleFastForward:)) {
@@ -177,7 +181,9 @@ enum {
 	// [self updateButtons];
 }
 -(void)toggleKeyboard:(id)sender {
-	_machine->set_ui_active(!_machine->ui_active());
+	mame_ui_manager *ui = dynamic_cast<mame_ui_manager *>(&_machine->ui());
+
+	ui->set_ui_active(!ui->ui_active());
 }
 
 -(void)toggleFullScreen:(id)sender {
