@@ -352,6 +352,7 @@ void vgm_start(running_machine &machine)
 	wcs2utf16(VgmTag.strCreator, L"", 0x20);
 	wcs2utf16(VgmTag.strNotes, L"", 0x50);
 	
+	#if 0 // removed in mame 0.253
 	if (gamedrv->flags & MACHINE_TYPE_ARCADE)
 	{
 		wcs2utf16(VgmTag.strSystemNameE, L"Arcade Machine", 0x30);
@@ -360,6 +361,7 @@ void vgm_start(running_machine &machine)
 		str2utf16(VgmTag.strReleaseDate, gamedrv->year, 0x10);
 	}
 	else
+	#endif
 	{
 		str2utf16(VgmTag.strSystemNameE, gamedrv->type.fullname(), 0x30);
 		if (devimg != nullptr && devimg->exists())
