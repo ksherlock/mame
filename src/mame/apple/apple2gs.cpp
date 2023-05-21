@@ -732,7 +732,8 @@ void apple2gs_state::machine_start()
 	int ramsize = m_ram_size - 0x20000; // subtract 128K for banks 0 and 1, which are handled specially
 
 	// RAM sizes for both classes of machine no longer include the Mega II RAM
-	space.install_ram(0x020000, ramsize - 1 + 0x20000, m_ram_ptr + 0x020000);
+	if (m_ram_size != 0x40000)
+		space.install_ram(0x020000, ramsize - 1 + 0x20000, m_ram_ptr + 0x020000);
 
 	// setup save states
 	save_item(NAME(m_speaker_state));
