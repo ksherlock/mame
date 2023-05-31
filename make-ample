@@ -5,6 +5,7 @@ DRIVERS = apple/apple1.cpp apple/apple2.cpp apple/apple3.cpp apple/apple2e.cpp a
 	apple/macii.cpp apple/maciici.cpp apple/maciifx.cpp apple/maciivx.cpp \
 	apple/maclc.cpp apple/maclc3.cpp \
 	agat/agat.cpp vtech/laser3k.cpp \
+	atari/atarist.cpp \
 	virtual/vgmplay.cpp
 
 SOURCES = $(subst $(space),$(comma),$(addprefix src/mame/,$(DRIVERS)))
@@ -62,6 +63,7 @@ HASH = apple1.xml \
 	apple2gs_flop_misc.xml apple2gs_flop_orig.xml apple2gs_flop_clcracked.xml \
 	apple3.xml cecflop.xml \
 	mac_hdd.xml mac_flop.xml mac_hdflop.xml \
+	st_flop.xml st_cart.xml \
 	softwarelist.dtd
 
 mame-data.tgz:
