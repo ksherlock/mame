@@ -72,8 +72,8 @@
 #include "transwarp.h"
 #include "uniprint.h"
 #include "uthernet.h"
+#include "uthernet2.h"
 #include "vistaa800.h"
-
 
 void apple2_slot0_cards(device_slot_interface &device)
 {
@@ -221,6 +221,7 @@ void apple2e_cards(device_slot_interface &device)
 	device.option_add("noisemaker", A2BUS_NOISEMAKER);         // ADS Noisemaker II
 	device.option_add("cmsscsi", A2BUS_CMSSCSI);               // CMS Apple II SCSI Card
 	device.option_add("uthernet", A2BUS_UTHERNET);             // A2RetroSystems Uthernet card
+	device.option_add("uthernet2", A2BUS_UTHERNET2);           // A2RetroSystems Uthernet II card
 	device.option_add("sider2", A2BUS_SIDER2);                 // Advanced Tech Systems / First Class Peripherals Sider 2 SASI card
 	device.option_add("sider1", A2BUS_SIDER1);                 // Advanced Tech Systems / First Class Peripherals Sider 1 SASI card
 	device.option_add("uniprint", A2BUS_UNIPRINT);             // Videx Uniprint parallel printer card
@@ -298,6 +299,7 @@ void apple2gs_cards(device_slot_interface &device)
 //  device.option_add("ramfast", A2BUS_RAMFAST);               // C.V. Technologies RAMFast SCSI card
 	device.option_add("cmsscsi", A2BUS_CMSSCSI);               // CMS Apple II SCSI Card
 	device.option_add("uthernet", A2BUS_UTHERNET);             // A2RetroSystems Uthernet card
+	device.option_add("uthernet2", A2BUS_UTHERNET2);           // A2RetroSystems Uthernet II card
 	device.option_add("sider2", A2BUS_SIDER2);                 // Advanced Tech Systems / First Class Peripherals Sider 2 SASI card
 	device.option_add("sider1", A2BUS_SIDER1);                 // Advanced Tech Systems / First Class Peripherals Sider 1 SASI card
 	device.option_add("uniprint", A2BUS_UNIPRINT);             // Videx Uniprint parallel printer card
