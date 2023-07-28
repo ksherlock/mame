@@ -403,13 +403,13 @@ enum {
 
 
 
-
--(void)dealloc {
+-(void)destroy {
 
 	NSMenu *mainMenu = [NSApp mainMenu];
 
 	[_timer invalidate];
 	[_timer release];
+	_timer = nil;
 
 	if (_speedMenuItem) [mainMenu removeItem: _speedMenuItem];
 	if (_specialMenuItem) [mainMenu removeItem: _specialMenuItem];
@@ -422,6 +422,18 @@ enum {
 
 	[NSApp setTouchBar: nil];
 
+	_speedMenuItem = nil;
+	_specialMenuItem = nil;
+	_videoMenu = nil;
+	_touchBarButtons = nil;
+
+	_machine = nil;
+	_speed = nil;
+}
+
+-(void)dealloc {
+
+	[self destroy];
 	[super dealloc];
 }
 
@@ -603,7 +615,7 @@ static NSImage *MouseOffImage(void) {
 		[button setTag: kTagFastForward];
 		[button setImage: [NSImage imageNamed: NSImageNameTouchBarFastForwardTemplate]];
 
-		[button sendActionOn: NSLeftMouseDownMask|NSLeftMouseUpMask];
+		[button sendActionOn: NSEventMaskLeftMouseDown|NSEventMaskLeftMouseUp];
 		[buttons addObject: button];
 
 		item = [[NSCustomTouchBarItem alloc] initWithIdentifier: @"mame.ff"];
@@ -751,10 +763,13 @@ void ample_update_machine(running_machine *machine) {
 
 static MenuDelegate *target = nil;
 
-	if (target) [target release];
-	target = [[MenuDelegate alloc] initWithMachine: machine];
-
 	@autoreleasepool {
+
+		if (target) {
+			[target destroy];
+			[target release];
+		}
+		target = [[MenuDelegate alloc] initWithMachine: machine];
 
 		[target fixMenus];
 		[target buildSpecialMenu];
