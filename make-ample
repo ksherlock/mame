@@ -3,7 +3,7 @@
 DRIVERS = apple/apple1.cpp apple/apple2.cpp apple/apple3.cpp apple/apple2e.cpp apple/apple2gs.cpp \
 	apple/superga2.cpp apple/mac128.cpp \
 	apple/macii.cpp apple/maciici.cpp apple/maciifx.cpp apple/maciivx.cpp \
-	apple/maclc.cpp apple/maclc3.cpp \
+	apple/maclc.cpp apple/maclc3.cpp apple/macquadra700.cpp apple/macquadra800.cpp \
 	agat/agat.cpp vtech/laser3k.cpp \
 	atari/atarist.cpp \
 	virtual/vgmplay.cpp
