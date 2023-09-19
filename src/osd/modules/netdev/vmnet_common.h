@@ -89,7 +89,7 @@ static int is_broadcast(const uint8_t *packet, unsigned size) {
   return !memcmp(packet + 0, ff, 6);
 }
 
-static int is_unicast(const uint8_t *packet, unsigned size) {
+[[maybe_unused]] static int is_unicast(const uint8_t *packet, unsigned size) {
   return (*packet & 0x01) == 0;
 }
 
@@ -178,22 +178,24 @@ static int is_dhcp_in(const uint8_t *packet, unsigned size) {
 static void recalc_udp_checksum(uint8_t *packet, unsigned size) {
   if (size < eth_data + ip_data + udp_data) return;
 
+  uint8_t *udp_ptr = packet + eth_data + ip_data;
+
   // checksum optional for UDP.
-  if (packet[eth_data+ip_data+udp_cksum+0] == 0 && packet[eth_data+ip_data+udp_cksum+1] == 0)
+  if (udp_ptr[udp_cksum+0] == 0 && udp_ptr[udp_cksum+1] == 0)
     return;
 
+  udp_ptr[udp_cksum+0] = 0;
+  udp_ptr[udp_cksum+1] = 0;
 
   // unsigned ip_version = packet[eth_data + ip_ver_ihl] & 0xf0;
   unsigned packet_len = (packet[eth_data + ip_len + 0] << 8) | (packet[eth_data + ip_len + 1]);
   // unsigned proto = packet[eth_data+ip_proto];
 
-  packet[eth_data+ip_data+udp_cksum+0] = 0;
-  packet[eth_data+ip_data+udp_cksum+1] = 0;
-
   if (packet_len + eth_data < size)
     return;
 
   packet_len -= ip_data;
+
 
   unsigned sum = 0;
   unsigned i;
@@ -208,19 +210,19 @@ static void recalc_udp_checksum(uint8_t *packet, unsigned size) {
   }
 
   for(i = 0; i < packet_len; i += 2) {
-    sum += (uint32_t)packet[eth_data+ip_data+i + 0] << 8;
-    sum += (uint32_t)packet[eth_data+ip_data+i + 1];
+    sum += (uint32_t)udp_ptr[i + 0] << 8;
+    sum += (uint32_t)udp_ptr[i + 1];
   }
   if (packet_len & 0x01) {
-    sum += (uint32_t)packet[eth_data+packet_len-1] << 8;
+    sum += (uint32_t)udp_ptr[packet_len-1] << 8;
   }
 
   sum += sum >> 16;
   sum = ~sum & 0xffff;
   if (sum == 0) sum = 0xffff;
 
-  packet[eth_data+ip_data+udp_cksum+0] = (sum >> 8) & 0xff;
-  packet[eth_data+ip_data+udp_cksum+1] = (sum >> 0) & 0xff;
+  udp_ptr[udp_cksum+0] = (sum >> 8) & 0xff;
+  udp_ptr[udp_cksum+1] = (sum >> 0) & 0xff;
 
 }
 
@@ -238,9 +240,9 @@ static void fix_incoming_packet(uint8_t *packet, unsigned size, const char real_
   }
 
   /* dhcp request - fix the hardware address */
-  if (is_unicast(packet, size) && is_dhcp_in(packet, size)) {
-    if (!memcmp(packet + 70, real_mac, 6))
-      memcpy(packet + 70, fake_mac, 6);
+  if (is_dhcp_in(packet, size) && !memcmp(packet + 70, real_mac, 6)) {
+    memcpy(packet + 70, fake_mac, 6);
+    recalc_udp_checksum(packet, size);
     return;
   }
 
@@ -260,22 +262,20 @@ static void fix_outgoing_packet(uint8_t *packet, unsigned size, const char real_
   }
 
   /* dhcp request - fix the hardware address */
-  if (is_broadcast(packet, size) && is_dhcp_out(packet, size)) {
+  if (is_dhcp_out(packet, size) && !memcmp(packet + 70, fake_mac, 6)) {
 
-    if (!memcmp(packet + 70, fake_mac, 6)) {
-      memcpy(packet + 70, real_mac, 6);
+    memcpy(packet + 70, real_mac, 6);
 
-      /* work-around for old IP65 bug where ip address used before it should be */
-      #ifdef FIX_IP65_DHCP
-      if (size > 284 && packet[282] == 0x35 && packet[283] == 1 && packet[284] <= dhcp_request)
-      {
-        memset(packet + 14 + ip_src, 0, 4);
-        recalc_ip_checksum(packet, size);
-      }
-      #endif
-
-      recalc_udp_checksum(packet, size);
+    /* work-around for old IP65 bug where ip address used before it should be */
+    #ifdef FIX_IP65_DHCP
+    if (size > 284 && packet[282] == 0x35 && packet[283] == 1 && packet[284] <= dhcp_request)
+    {
+      memset(packet + 14 + ip_src, 0, 4);
+      recalc_ip_checksum(packet, size);
     }
+    #endif
+
+    recalc_udp_checksum(packet, size);
     return;
   }
 
