@@ -209,12 +209,14 @@ static void recalc_udp_checksum(uint8_t *packet, unsigned size) {
     sum += (uint32_t)packet[eth_data+ip_dest + i + 1];
   }
 
+  if (packet_len & 0x01) {
+    sum += (uint32_t)udp_ptr[packet_len-1] << 8;
+    --packet_len;
+  }
+
   for(i = 0; i < packet_len; i += 2) {
     sum += (uint32_t)udp_ptr[i + 0] << 8;
     sum += (uint32_t)udp_ptr[i + 1];
-  }
-  if (packet_len & 0x01) {
-    sum += (uint32_t)udp_ptr[packet_len-1] << 8;
   }
 
   sum += sum >> 16;
