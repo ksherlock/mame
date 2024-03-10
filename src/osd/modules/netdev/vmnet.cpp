@@ -11,13 +11,14 @@
  clang -framework vmnet -framework Foundation
 */
 
+#include "netdev_module.h"
+
+#include "modules/osdmodule.h"
+
 #if defined(OSD_NET_USE_VMNET)
 
 #include "emu.h"
 #include "osdnet.h"
-#include "modules/osdmodule.h"
-#include "netdev_module.h"
-
 
 #include <cstdint>
 #include <cstdlib>
@@ -28,6 +29,10 @@
 #include <vmnet/vmnet.h>
 
 #include "vmnet_common.h"
+
+namespace osd {
+
+namespace {
 
 static int classify_mac(uint8_t *mac) {
 	if ((mac[0] & 0x01) == 0) return 1; /* unicast */
@@ -52,32 +57,32 @@ public:
 	}
 };
 
-class netdev_vmnet : public osd_netdev
+class netdev_vmnet : public osd_network_device
 {
 public:
-	netdev_vmnet(const char *name, class device_network_interface *ifdev, int rate);
+	netdev_vmnet(const char *name, network_handler &ifdev);
 	~netdev_vmnet();
 
 	int send(uint8_t *buf, int len) override;
-	void set_mac(const char *mac) override;
+	void set_mac(const uint8_t *mac) override;
 protected:
 	int recv_dev(uint8_t **buf) override;
 private:
 
 
 	interface_ref m_interface = 0;
-	char m_vmnet_mac[6];
+	uint8_t m_vmnet_mac[6];
 	long m_vmnet_mtu;
 	long m_vmnet_packet_size;
 
-	char m_mac[6];
+	uint8_t m_mac[6];
 
 	uint8_t *m_buffer = 0;
 };
 
 
-netdev_vmnet::netdev_vmnet(const char *name, class device_network_interface *ifdev, int rate)
-	: osd_netdev(ifdev, rate) {
+netdev_vmnet::netdev_vmnet(const char *name, network_handler &ifdev)
+	: osd_network_device(ifdev) {
 
 
 	xpc_object_t dict;
@@ -251,8 +256,8 @@ int netdev_vmnet::recv_dev(uint8_t **buf) {
 
 static CREATE_NETDEV(create_vmnet)
 {
-	auto *dev = new netdev_vmnet(ifname, ifdev, rate);
-	return dynamic_cast<osd_netdev *>(dev);
+	auto *dev = new netdev_vmnet(ifname, ifdev);
+	return dynamic_cast<osd_network_device *>(dev);
 }
 
 int vmnet_module::init(osd_interface &osd, const osd_options &options) {
@@ -264,12 +269,16 @@ void vmnet_module::exit() {
 	clear_netdev();
 }
 
-#else
-	#include "modules/osdmodule.h"
-	#include "netdev_module.h"
+} // anonymous namespace
 
-	MODULE_NOT_SUPPORTED(vmnet_module, OSD_NETDEV_PROVIDER, "vmnet")
+} // namespace osd
+
+
+#else
+
+namespace osd { namespace { MODULE_NOT_SUPPORTED(vmnet_module, OSD_NETDEV_PROVIDER, "vmnet") } }
+
 #endif
 
 
-MODULE_DEFINITION(NETDEV_VMNET, vmnet_module)
+MODULE_DEFINITION(NETDEV_VMNET, osd::vmnet_module)
