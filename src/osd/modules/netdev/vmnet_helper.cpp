@@ -11,15 +11,14 @@
  clang -framework vmnet -framework Foundation
 */
 
+#include "netdev_module.h"
+
+#include "modules/osdmodule.h"
+
 #if defined(OSD_NET_USE_VMNET_HELPER)
-
-
 
 #include "emu.h"
 #include "osdnet.h"
-#include "modules/osdmodule.h"
-#include "netdev_module.h"
-
 
 #include <cstdint>
 #include <cstdlib>
@@ -48,6 +47,12 @@ enum {
 
 #include "vmnet_common.h"
 
+extern char **environ;
+
+namespace osd {
+
+namespace {
+
 class vmnet_helper_module : public osd_module, public netdev_module
 {
 public:
@@ -67,14 +72,14 @@ public:
 	}
 };
 
-class netdev_vmnet_helper : public osd_netdev
+class netdev_vmnet_helper : public osd_network_device
 {
 public:
-	netdev_vmnet_helper(const char *name, class device_network_interface *ifdev, int rate);
+	netdev_vmnet_helper(const char *name, network_handler &ifdev);
 	~netdev_vmnet_helper();
 
 	int send(uint8_t *buf, int len) override;
-	void set_mac(const char *mac) override;
+	void set_mac(const uint8_t *mac) override;
 protected:
 	int recv_dev(uint8_t **buf) override;
 private:
@@ -95,11 +100,11 @@ private:
 
 	void dump(uint8_t *buf, int len);
 
-	char m_vmnet_mac[6];
+	uint8_t m_vmnet_mac[6];
 	uint32_t m_vmnet_mtu;
 	uint32_t m_vmnet_packet_size;
 
-	char m_mac[6];
+	uint8_t m_mac[6];
 
 	uint8_t *m_buffer = 0;
 	pid_t m_child = -1;
@@ -155,8 +160,8 @@ static int set_close_exec(int fd) {
 	return flags >= 0 ? fcntl(fd, F_SETFD, flags | FD_CLOEXEC) : -1;
 }
 
-netdev_vmnet_helper::netdev_vmnet_helper(const char *name, class device_network_interface *ifdev, int rate)
-	: osd_netdev(ifdev, rate) {
+netdev_vmnet_helper::netdev_vmnet_helper(const char *name, network_handler &ifdev)
+	: osd_network_device(ifdev) {
 
 	// fprintf(stderr, "%s\n", __func__);
 
@@ -199,7 +204,6 @@ netdev_vmnet_helper::netdev_vmnet_helper(const char *name, class device_network_
 	}
 
 	if (m_child == 0) {
-		extern char **environ;
 		/* need to setsid() on the child */
 
 		dup2(pipe_stdin[0], STDIN_FILENO);
@@ -407,7 +411,7 @@ netdev_vmnet_helper::~netdev_vmnet_helper() {
 	shutdown_child();
 }
 
-void netdev_vmnet_helper::set_mac(const char *mac)
+void netdev_vmnet_helper::set_mac(const uint8_t *mac)
 {
 	memcpy(m_mac, mac, 6);
 }
@@ -543,8 +547,8 @@ void netdev_vmnet_helper::dump(uint8_t *buf, int len) {
 static CREATE_NETDEV(create_vmnet_helper)
 {
 	// fprintf(stderr, "%s\n", __func__);
-	auto *dev = new netdev_vmnet_helper(ifname, ifdev, rate);
-	return dynamic_cast<osd_netdev *>(dev);
+	auto *dev = new netdev_vmnet_helper(ifname, ifdev);
+	return dynamic_cast<osd_network_device *>(dev);
 }
 
 int vmnet_helper_module::init(osd_interface &osd, const osd_options &options) {
@@ -558,13 +562,16 @@ void vmnet_helper_module::exit() {
 	clear_netdev();
 }
 
+} // anonymous namespace
+
+} // namespace osd
+
 
 #else
-	#include "modules/osdmodule.h"
-	#include "netdev_module.h"
 
-	MODULE_NOT_SUPPORTED(vmnet_helper_module, OSD_NETDEV_PROVIDER, "vmnet_helper")
+namespace osd { namespace { MODULE_NOT_SUPPORTED(vmnet_helper_module, OSD_NETDEV_PROVIDER, "vmnet_helper") } }
+
 #endif
 
 
-MODULE_DEFINITION(NETDEV_VMNET_HELPER, vmnet_helper_module)
+MODULE_DEFINITION(NETDEV_VMNET_HELPER, osd::vmnet_helper_module)
