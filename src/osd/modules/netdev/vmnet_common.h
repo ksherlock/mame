@@ -229,7 +229,7 @@ static void recalc_udp_checksum(uint8_t *packet, unsigned size) {
 }
 
 
-static void fix_incoming_packet(uint8_t *packet, unsigned size, const char real_mac[6], const char fake_mac[6]) {
+static void fix_incoming_packet(uint8_t *packet, unsigned size, const uint8_t real_mac[6], const uint8_t fake_mac[6]) {
 
   if (memcmp(packet + 0, real_mac, 6) == 0)
     memcpy(packet + 0, fake_mac, 6);
@@ -250,7 +250,7 @@ static void fix_incoming_packet(uint8_t *packet, unsigned size, const char real_
 
 }
 
-static void fix_outgoing_packet(uint8_t *packet, unsigned size, const char real_mac[6], const char fake_mac[6]) {
+static void fix_outgoing_packet(uint8_t *packet, unsigned size, const uint8_t real_mac[6], const uint8_t fake_mac[6]) {
 
 #define FIX_IP65_DHCP 1
   if (memcmp(packet + 6, fake_mac, 6) == 0)
