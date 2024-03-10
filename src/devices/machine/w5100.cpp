@@ -458,6 +458,7 @@ void w5100_device::device_start()
 	m_rx_buffer = std::make_unique<uint8_t[]>(0x2000);
 	m_tx_buffer = std::make_unique<uint8_t[]>(0x2000);
 
+	m_busy = false;
 
 	save_item(NAME(m_idm));
 	save_item(NAME(m_identification));
@@ -490,6 +491,7 @@ void w5100_device::device_reset()
 {
 	m_idm = 0;
 	m_identification = 0;
+	m_busy = false;
 
 	if (m_irq_state)
 		m_irq_handler(CLEAR_LINE);
@@ -910,6 +912,7 @@ void w5100_device::copy_from_tx_buffer(int sn, unsigned offset, uint8_t *data, i
 
 void w5100_device::send_complete_cb(int result)
 {
+	m_busy = false;
 
 	if (!m_frame_queue.empty())
 	{
