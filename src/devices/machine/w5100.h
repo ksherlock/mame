@@ -86,10 +86,7 @@ public:
 	void update_socket_rx_bufsize();
 
 	void send_or_queue(uint8_t *buffer, int length);
-	bool busy(void)
-	{
-		return m_send_timer->enabled();
-	}
+	bool busy(void) const noexcept { return m_busy; }
 
 
 	void copy_from_tx_buffer(int sn, unsigned offset, uint8_t *buffer, int length) const;
@@ -109,6 +106,10 @@ public:
 	void build_udp_header(uint8_t *frame, const uint8_t *mac, wiznet_ip_info &, wiznet_udp_info &, int data_length);
 	void build_tcp_header(uint8_t *frame, const uint8_t *mac, wiznet_ip_info &, wiznet_tcp_info &, int data_length);
 
+	int send(u8 *buf, int len, int fcs = 0) {
+		m_busy = true;
+		return device_network_interface::send(buf, len, fcs);
+	}
 
 protected:
 
@@ -142,6 +143,7 @@ private:
 	void send_icmp_unreachable(const uint8_t *mac, const wiznet_ip_info &ip, const uint8_t *);
 
 
+	unsigned m_busy;
 
 	required_device_array<w5100_socket_device, 4> m_sockets;
 
