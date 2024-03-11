@@ -1,0 +1,86 @@
+
+
+DRIVERS = apple/apple1.cpp apple/apple2.cpp apple/apple3.cpp apple/apple2e.cpp apple/apple2gs.cpp \
+	apple/superga2.cpp apple/mac128.cpp \
+	apple/macii.cpp apple/maciici.cpp apple/maciifx.cpp apple/maciivx.cpp \
+	apple/maclc.cpp apple/maclc3.cpp \
+	apple/macquadra605.cpp apple/macquadra630.cpp apple/macquadra700.cpp apple/macquadra800.cpp \
+	agat/agat.cpp vtech/laser3k.cpp \
+	atari/atarist.cpp \
+	trs/coco12.cpp trs/coco3.cpp trs/dragon.cpp trs/trs80.cpp trs/trs80m2.cpp trs/trs80m3.cpp \
+	virtual/vgmplay.cpp \
+	casio/cz101.cpp \
+	dec/vt52.cpp dec/vt100.cpp dec/vt240.cpp dec/pdp11.cpp dec/kn01.cpp dec/kn02.cpp \
+	ibm/rtpc.cpp \
+	hp/hp9k_3xx.cpp \
+	intergraph/interpro.cpp \
+	mips/mips.cpp \
+	sgi/indy_indigo2.cpp sgi/ip12.cpp sgi/ip20.cpp sgi/ip6.cpp \
+	sony/news_68k.cpp sony/news_r3k.cpp sony/news_r4k.cpp \
+	sun/sun1.cpp sun/sun2.cpp sun/sun3.cpp sun/sun3x.cpp sun/sun4.cpp \
+	amiga/amiga.cpp acorn/bbc.cpp acorn/electron.cpp \
+	commodore/c64.cpp commodore/kim1.cpp commodore/pet.cpp
+
+
+SOURCES = $(subst $(space),$(comma),$(addprefix src/mame/,$(DRIVERS)))
+comma = ,
+empty = 
+space = $(empty) $(empty)
+
+.PHONY: all
+all: mame64 mame-data.tgz
+
+
+.PHONY: clean
+clean:
+	$(RM) mame64
+	$(RM) mame-universal
+	$(RM) mame-arm64
+	$(RM) mame-x64
+	$(RM) mame-data.tgz
+
+
+
+.PHONY: release
+release: clean mame-universal mame-data.tgz
+
+mame-universal: mame-arm64 mame-x64
+	lipo -create -output mame-universal mame-arm64 mame-x64
+
+mame-arm64:
+	make -j3 REGENIE=${REGENIE} SOURCES=${SOURCES} SDL_INI_PATH=. USE_VMNET_HELPER=1 USE_PCAP=0 \
+	SDL_FRAMEWORK_PATH="`pwd`/Frameworks" REGENIE=${REGENIE} ARCHOPTS="-DAMPLE -target arm64-apple-macos11" \
+	BUILDDIR=build-arm64 UNAME="Darwin arm64 arm" UNAME_M=arm64 UNAME_P=arm
+	mv mame mame-arm64
+
+mame-x64:
+	make -j3 REGENIE=${REGENIE} SOURCES=${SOURCES} SDL_INI_PATH=. USE_VMNET_HELPER=1 USE_PCAP=0 \
+	SDL_FRAMEWORK_PATH="`pwd`/Frameworks" REGENIE=${REGENIE} ARCHOPTS="-DAMPLE -target x86_64-apple-macos10.13" \
+	BUILDDIR=build-x64 UNAME="Darwin x86_64 i386" UNAME_M=x86_64 UNAME_P=i386
+	mv mame mame-x64
+
+
+
+#.PHONY: mame64d
+mamed:
+	make -j3 SOURCES=${SOURCES} SDL_INI_PATH=. USE_VMNET_HELPER=1 USE_PCAP=0 SDL_FRAMEWORK_PATH="`pwd`/Frameworks" DEBUG=1 SYMBOLS=1 REGENIE=${REGENIE} ARCHOPTS=-DAMPLE SANITIZE=undefined BUILDDIR=build-debug
+	install_name_tool -add_rpath ./Frameworks/ mamed
+
+#.PHONY: regenie
+#regenie:
+#	make -j2 SOURCES=${SOURCES} SDL_INI_PATH=. USE_VMNET_HELPER=1 USE_PCAP=0 SDL_FRAMEWORK_PATH="`pwd`/Frameworks" DEBUG=1 SYMBOLS=1 REGENIE=1
+
+
+# excluding hashes directory for now.
+HASH = apple1.xml \
+	apple2_cass.xml apple2_flop_clcracked.xml apple2_flop_misc.xml apple2_flop_orig.xml \
+	apple2gs_flop_misc.xml apple2gs_flop_orig.xml apple2gs_flop_clcracked.xml \
+	apple3.xml cecflop.xml \
+	mac_hdd.xml mac_flop.xml mac_hdflop.xml mac_flop_clcracked.xml mac_flop_orig.xml \
+	st_flop.xml st_cart.xml \
+	softwarelist.dtd
+
+mame-data.tgz:
+	tar cfz mame-data.tgz --disable-copyfile \
+	artwork bgfx ini keymaps language plugins samples uismall.bdf \
+	$(addprefix hash/,$(HASH))
