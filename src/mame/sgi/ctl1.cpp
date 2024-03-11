@@ -142,8 +142,11 @@ void sgi_ctl1_device::cpucfg_w(u16 data)
 
 		if ((data & CPUCFG_BAD) && !m_parity && m_memcfg.has_value())
 		{
+#if __APPLE__ && __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ < 101400
+			unsigned const ram_size = ((*m_memcfg & MEMCFG_MEMSIZE) + 1) * ((*m_memcfg & MEMCFG_4MRAM) ? 16 : 4);
+#else
 			unsigned const ram_size = ((m_memcfg.value() & MEMCFG_MEMSIZE) + 1) * ((m_memcfg.value() & MEMCFG_4MRAM) ? 16 : 4);
-
+#endif
 			LOGMASKED(LOG_PARITY, "bad parity activated %dM\n", ram_size);
 
 			m_parity = std::make_unique<u8[]>(ram_size << (20 - 3));
@@ -163,7 +166,11 @@ void sgi_ctl1_device::memcfg_w(u8 data)
 {
 	LOG("memcfg_w 0x%02x\n", data);
 
+#if __APPLE__ && __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ < 101400
+	if (!m_memcfg.has_value() || ((*m_memcfg ^ data) & (MEMCFG_4MRAM | MEMCFG_MEMSIZE)))
+#else
 	if (!m_memcfg.has_value() || ((m_memcfg.value() ^ data) & (MEMCFG_4MRAM | MEMCFG_MEMSIZE)))
+#endif
 	{
 		// remove existing mapping
 		if (m_memcfg.has_value())
@@ -189,7 +196,11 @@ void sgi_ctl1_device::memcfg_w(u8 data)
 
 u32 sgi_ctl1_device::refadr_r()
 {
+#if __APPLE__ && __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ < 101400
+	if (m_memcfg.has_value() && (*m_memcfg & MEMCFG_TIMERDIS))
+#else
 	if (m_memcfg.value() & MEMCFG_TIMERDIS)
+#endif
 	{
 		// refresh cycle is generated every 64μs
 		u64 const refreshes = (machine().time() - m_refresh_timer).as_ticks(15.625_kHz_XTAL);
