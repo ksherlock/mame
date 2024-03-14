@@ -8,6 +8,7 @@ DRIVERS = apple/apple1.cpp apple/apple2.cpp apple/apple3.cpp apple/apple2e.cpp a
 	agat/agat.cpp vtech/laser3k.cpp \
 	atari/atarist.cpp \
 	trs/coco12.cpp trs/coco3.cpp trs/dragon.cpp trs/trs80.cpp trs/trs80m2.cpp trs/trs80m3.cpp \
+	tangerine/microtan.cpp tangerine/oric.cpp \
 	virtual/vgmplay.cpp \
 	casio/cz101.cpp \
 	dec/vt52.cpp dec/vt100.cpp dec/vt240.cpp dec/pdp11.cpp dec/kn01.cpp dec/kn02.cpp \
