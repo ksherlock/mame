@@ -87,6 +87,10 @@
 
 #include "utf8.h"
 
+#ifdef AMPLE
+#include "ample_host.h"
+#endif
+
 
 namespace {
 
@@ -136,6 +140,9 @@ public:
 		  m_a2bus(*this, "a2bus"),
 		  m_a2common(*this, "a2common"),
 		  //      m_a2host(*this, "a2host"),
+#ifdef AMPLE
+		  m_a2host(*this, "a2host"),
+#endif
 		  m_gameio(*this, "gameio"),
 		  m_speaker(*this, "speaker"),
 		  m_upperbank(*this, A2GS_UPPERBANK_TAG),
@@ -198,6 +205,9 @@ private:
 	required_device<a2bus_device> m_a2bus;
 	required_device<apple2_common_device> m_a2common;
 //  required_device<apple2_host_device> m_a2host;
+#ifdef AMPLE
+	required_device<ample_host_device> m_a2host;
+#endif
 	required_device<apple2_gameio_device> m_gameio;
 	required_device<speaker_sound_device> m_speaker;
 	memory_view m_upperbank, m_upperaux, m_upper00, m_upper01;
@@ -415,7 +425,11 @@ private:
 	void set_adb_line(int linestate);
 
 	offs_t dasm_trampoline(std::ostream &stream, offs_t pc, const util::disasm_interface::data_buffer &opcodes, const util::disasm_interface::data_buffer &params);
+#ifdef AMPLE
+	void wdm_trampoline(offs_t offset, u8 data) { m_a2host->wdm_w(offset, data); }
+#else
 	void wdm_trampoline(offs_t offset, u8 data) { }; //m_a2host->wdm_w(space, offset, data); }
+#endif
 
 	bool m_is_rom3 = false;
 	int m_speaker_state = 0;
@@ -3808,6 +3822,13 @@ void apple2gs_state::apple2gs(machine_config &config)
 //  APPLE2_HOST(config, m_a2host, A2GS_14M);
 //  m_a2host->set_cputag(m_maincpu);
 //  m_a2host->set_space(m_maincpu, AS_PROGRAM);
+
+#ifdef AMPLE
+	APPLE2_HOST(config, m_a2host, A2GS_14M);
+	m_a2host->set_cputag(m_maincpu);
+	m_a2host->set_space(m_maincpu, AS_PROGRAM);
+#endif
+
 
 	APPLE2_GAMEIO(config, m_gameio, apple2_gameio_device::default_options, nullptr);
 
