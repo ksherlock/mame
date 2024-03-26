@@ -1,0 +1,31 @@
+enum {
+  CREATE = 0xc0,
+  DESTROY = 0xc1,
+  RENAME = 0xc2,
+  SET_FILE_INFO = 0xc3,
+  GET_FILE_INFO = 0xc4,
+  ONLINE = 0xc5,
+  SET_PREFIX = 0xc6,
+  GET_PREFIX = 0xc7,
+  OPEN = 0xc8,
+  NEWLINE = 0xc9,
+  READ = 0xca,
+  WRITE = 0xcb,
+  CLOSE = 0xcc,
+  FLUSH = 0xcd,
+  SET_MARK = 0xce,
+  GET_MARK = 0xcf,
+  SET_EOF = 0xd0,
+  GET_EOF = 0xd1,
+  SET_BUF = 0xd2,
+  GET_BUF = 0xd3,
+  ALLOC_INTERRUPT = 0x40,
+  DEALLOC_INTERRUPT = 0x41,
+  ATINIT = 0x99,
+  READ_BLOCK = 0x80,
+  WRITE_BLOCK = 0x81,
+  GET_TIME = 0x82,
+  QUIT = 0x65
+};
+
+#define badBufferAddress 0x56
