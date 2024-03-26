@@ -28,6 +28,7 @@ protected:
 
 
 	void host_fst();
+	void host_mli();
 	void host_print();
 	void host_hexdump();
 
@@ -45,7 +46,8 @@ protected:
 
 	std::string fst_get_path1();
 	std::string fst_get_path2();
-	file_entry *fst_get_file_entry();
+	file_entry *fst_get_file_entry(unsigned cookie);
+	file_entry *mli_get_file_entry(unsigned cookie);
 
 	unsigned fst_change_path(unsigned klass, const std::string &path1, const std::string &path2);
 	unsigned fst_clear_backup(unsigned klass, const std::string &path);
@@ -68,9 +70,44 @@ protected:
 	unsigned fst_format(unsigned klass);
 	unsigned fst_erase(unsigned klass);
 
-	void toolbox_return(unsigned acc);
+	void gsos_return(unsigned acc);
+	void mli_return(unsigned acc);
+
+	/* mli */
+	int mli_quit(unsigned dcb);
+	int mli_close(unsigned dcb);
+	int mli_flush(unsigned dcb);
+	int mli_rw_block(unsigned dcb);
+
+	int mli_destroy(unsigned dcb, const std::string &path);
+	int mli_rename(unsigned dcb, const std::string &path1, const std::string &path2);
+	int mli_open(unsigned dcb, const std::string &path);
+	int mli_create(unsigned dcb, const std::string &path);
+	int mli_get_file_info(unsigned dcb, const std::string &path);
+	int mli_set_file_info(unsigned dcb, const std::string &path);
 
 
+	int mli_read(unsigned dcb, file_entry &e);
+	int mli_write(unsigned dcb, file_entry &e);
+	int mli_close(unsigned dcb, file_entry &e);
+	int mli_flush(unsigned dcb, file_entry &e);
+	int mli_get_buf(unsigned dcb, file_entry &e);
+	int mli_set_buf(unsigned dcb, file_entry &e);
+	int mli_get_eof(unsigned dcb, file_entry &e);
+	int mli_set_eof(unsigned dcb, file_entry &e);
+	int mli_get_mark(unsigned dcb, file_entry &e);
+	int mli_set_mark(unsigned dcb, file_entry &e);
+	int mli_newline(unsigned dcb, file_entry &e);
+
+	int mli_get_prefix(unsigned dcb);
+	int mli_set_prefix(unsigned dcb);
+
+	int mli_online(unsigned dcb);
+
+	int mli_online_tail(unsigned dcb);
+	int mli_set_prefix_tail(unsigned dcb);
+
+	int mli_expand_path(std::string &path);
 
 
 	std::string m_host_directory;
@@ -78,6 +115,15 @@ protected:
 
 
 	std::vector<file_entry> m_files;
+
+	/* mli */
+	std::string m_mli_prefix;
+	uint8_t m_mli_zp_save[16];
+	unsigned m_mli_call;
+	unsigned m_mli_dcb;
+	unsigned m_mli_rts;
+	unsigned m_mli_vector;
+	unsigned m_mli_unit;
 
 	required_ioport m_sysconfig;
 	required_device<class g65816_device> m_maincpu;
