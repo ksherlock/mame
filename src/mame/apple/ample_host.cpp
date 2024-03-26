@@ -20,6 +20,7 @@
 
 #include "fst.h"
 #include "gsos.h"
+#include "mli.h"
 
 #include <iostream>
 
@@ -41,6 +42,13 @@ enum {
 	translate_merlin,
 };
 
+enum {
+	BIT_HOST_ENABLE,
+	BIT_HOST_READ_ONLY,
+	BIT_HOST_TRANSLATE_TEXT,
+	BIT_HOST_TRANSLATE_MERLIN
+};
+
 
 struct ample_host_device::file_entry {
 
@@ -49,12 +57,20 @@ struct ample_host_device::file_entry {
 	file_entry(file_entry &&rhs) {
 		path = std::move(rhs.path);
 		dir_entries = std::move(rhs.dir_entries);
+		dir_file = std::move(rhs.dir_file);
+
 		fd = rhs.fd;
 		offset = rhs.offset;
 		type = rhs.type;
 		access = rhs.access;
 		translate = rhs.translate;
+		buffer = rhs.buffer;
+		level = rhs.level;
+		newline_mask = rhs.newline_mask;
+		newline_char = rhs.newline_char;
+
 		rhs.fd = -1;
+		rhs.close();
 	}
 
 	~file_entry() {
@@ -67,10 +83,15 @@ struct ample_host_device::file_entry {
 
 		path = std::move(rhs.path);
 		dir_entries = std::move(rhs.dir_entries);
+		dir_file = std::move(rhs.dir_file);
 		offset = rhs.offset;
 		type = rhs.type;
 		access = rhs.access;
 		translate = rhs.translate;
+		buffer = rhs.buffer;
+		level = rhs.level;
+		newline_mask = rhs.newline_mask;
+		newline_char = rhs.newline_char;
 
 		rhs.close();
 		return *this;
@@ -87,10 +108,14 @@ struct ample_host_device::file_entry {
 		if (fd >= 0) ::close(fd);
 		fd = -1;
 		type = file_none;
+		path.clear();
+		dir_entries.clear();
+		dir_file.clear();
 	}
 
 	std::string path;
-	std::vector<std::string> dir_entries;
+	std::vector<std::string> dir_entries; // for gs/os fst
+	std::vector<uint8_t> dir_file; // for prodos mli
 
 	int fd = -1;
 	off_t offset = 0;
@@ -98,6 +123,11 @@ struct ample_host_device::file_entry {
 	unsigned access = 0;
 	unsigned translate = translate_none;
 
+	/* mli */
+	unsigned buffer = 0;
+	unsigned level = 0;
+	unsigned newline_mask = 0;
+	unsigned newline_char = 0;
 };
 
 
@@ -114,6 +144,14 @@ namespace {
 	const unsigned dp_path_flag = 0x42;
 
 	const unsigned global_buffer = 0x009a00;
+
+	enum {
+		MLI_LEVEL = 0xBFD8,   // current file level
+		MLI_DEVNUM = 0xBF30,  // last slot / drive
+		MLI_DEVCNT = 0xBF31,  // count - 1
+		MLI_DEVLST = 0xBF32,  // active device list
+		MLI_PFIXPTR = 0xbf9a, // active prefix?
+	};
 
 
 	#ifdef _WIN32
@@ -144,7 +182,29 @@ namespace {
 	};
 
 
-
+	/* check for .. path components */
+	bool dotdot(const std::string &s) {
+		unsigned st = 1;
+		for (unsigned c : s) {
+			switch(st) {
+			case 0:
+				if (c == '/') ++st;
+				break;
+			case 1:
+			case 2:
+				if (c == '/') { st = 1; break; }
+				if (c == '.') { ++st; break; }
+				st = 0;
+				break;
+			case 3:
+				if (c == '/') return true;
+				st = 0;
+				break;
+			}
+		}
+		if (st == 3) return true;
+		return false;	
+	}
 
 	unsigned check_path(std::string &s) {
 		/* block any path with .. components */
@@ -153,23 +213,7 @@ namespace {
 		while (!s.empty() && s.back() == '/') s.pop_back();
 		if (s.empty()) return 0;
 
-		unsigned st = 0;
-		for (unsigned char c : s) {
-
-			switch(st) {
-			case 1:
-			case 2:
-				if (c == '.') { ++st; break; }
-				/* drop through */
-			case 0:
-				if (c == '/') st = 1;
-				break;
-			case 3:
-				if (c == '/') return badPathSyntax;
-				st = 0;
-			}
-		}
-		if (st == 3) return badPathSyntax;
+		if (dotdot(s)) return badPathSyntax;
 
 		if (s.front() != '/') return 0;
 		if (s.length() < 5) return volNotFound;
@@ -181,6 +225,7 @@ namespace {
 		else s = s.substr(pos);
 		return 0;
 	}
+
 
 
 	unsigned map_errno(int xerrno) {
@@ -738,6 +783,61 @@ namespace {
 		return rv;
 	}
 
+	void translate_in(std::vector<uint8_t> &data, unsigned tr) {
+		if (tr == translate_crlf) {
+			for (auto &c : data) {
+				if (c == '\n') c = '\r';
+			}
+		}
+		if (tr == translate_merlin) {
+			for (auto &c : data) {
+	          if (c == '\t') c = 0xa0;
+	          if (c == '\n') c = '\r';
+	          if (c != ' ') c |= 0x80;
+			}
+		}
+	}
+
+	void translate_out(std::vector<uint8_t> &data, unsigned tr) {
+		if (tr == translate_crlf) {
+			for (auto &c : data) {
+				if (c == '\r') c = '\n';
+			}
+		}
+		if (tr == translate_merlin) {
+			for (auto &c : data) {
+				if (c == 0xa0) c = '\t';
+				c &= 0x7f;
+				if (c == '\r') c = '\n';
+			}
+		}
+	}
+	unsigned mli_expected_pcount(unsigned call) {
+		switch (call) {
+		case CREATE: return 7;
+		case DESTROY: return 1;
+		case RENAME: return 2;
+		case SET_FILE_INFO: return 7;
+		case GET_FILE_INFO: return 10;
+		case ONLINE: return 2;
+		case SET_PREFIX: return 1;
+		case GET_PREFIX: return 1;
+		case OPEN: return 3;
+		case NEWLINE: return 3;
+		case READ: return 4;
+		case WRITE: return 4;
+		case CLOSE: return 1;
+		case FLUSH: return 1;
+		case SET_MARK: return 2;
+		case GET_MARK: return 2;
+		case SET_EOF: return 2;
+		case GET_EOF: return 2;
+		case SET_BUF: return 2;
+		case GET_BUF: return 2;
+
+		default: return 0;
+		}
+	}
 
 	const char *error_name(unsigned error) {
 		static const char *errors[] = {
@@ -908,13 +1008,16 @@ ample_host_device::ample_host_device(const machine_config &mconfig, const char *
 
 INPUT_PORTS_START( ample_host )
 	PORT_START("ample_config")
-	PORT_CONFNAME( 0x01, 0x00, "Read Only")
+	PORT_CONFNAME( 0x01, 0x01, "Host FST Enabled")
 	PORT_CONFSETTING(    0x00, DEF_STR(No))
 	PORT_CONFSETTING(    0x01, DEF_STR(Yes))
-	PORT_CONFNAME( 0x02, 0x02, "CR/LF Translation")
+	PORT_CONFNAME( 0x02, 0x00, "Read Only")
+	PORT_CONFSETTING(    0x00, DEF_STR(No))
+	PORT_CONFSETTING(    0x01, DEF_STR(Yes))
+	PORT_CONFNAME( 0x04, 0x04, "CR/LF Translation")
 	PORT_CONFSETTING(    0x00, DEF_STR(No))
 	PORT_CONFSETTING(    0x02, DEF_STR(Yes))
-	PORT_CONFNAME( 0x04, 0x00, "Merlin Translation")
+	PORT_CONFNAME( 0x08, 0x00, "Merlin Translation")
 	PORT_CONFSETTING(    0x00, DEF_STR(No))
 	PORT_CONFSETTING(    0x04, DEF_STR(Yes))
 INPUT_PORTS_END
@@ -952,12 +1055,8 @@ void ample_host_device::device_stop()
 void ample_host_device::wdm_w(offs_t offset, uint8_t data)
 {
 	/* data = wdm byte, offset = address */
-	//unsigned a = m_maincpu->g65816_get_reg(g65816_device::G65816_A);
-	//unsigned x = m_maincpu->g65816_get_reg(g65816_device::G65816_X);
-	//unsigned y = m_maincpu->g65816_get_reg(g65816_device::G65816_Y);
-	//unsigned p = m_maincpu->g65816_get_reg(g65816_device::G65816_P);
 
-	LOG("wdm: %02x\n", data);
+	if (!BIT(m_sysconfig->read(), BIT_HOST_ENABLE)) return ;
 
 	switch(data) {
 	case 0xa0: host_print(); break;
@@ -1123,12 +1222,35 @@ unsigned ample_host_device::fst_shutdown()
 	return 0;
 }
 
-void ample_host_device::toolbox_return(unsigned acc) {
+void ample_host_device::gsos_return(unsigned acc) {
 	unsigned p = m_maincpu->g65816_get_reg(g65816_device::G65816_P);
-	if (acc) p |= 1; // SEC
-	else p &= ~1; // CLC
+	/* semi-simulate cmp #1 */
+	if (acc) {
+		p |= 1; // SEC
+		p &= ~2; // CLZ
+	} else {
+		p &= ~1; // CLC
+		p |= 2; // SEZ
+	}
 	m_maincpu->g65816_set_reg(g65816_device::G65816_P, p);
 	m_maincpu->g65816_set_reg(g65816_device::G65816_A, acc);
+}
+
+void ample_host_device::mli_return(unsigned err) {
+	unsigned p = m_maincpu->g65816_get_reg(g65816_device::G65816_P);
+	unsigned a = m_maincpu->g65816_get_reg(g65816_device::G65816_A);
+	err &= 0xff;
+	/* semi-simulate cmp #1 */
+	if (err) {
+		p |= 1; // SEC
+		p &= ~2; // CLZ
+	} else {
+		p &= ~1; // CLC
+		p |= 2; // SEZ
+	}
+	a = (a & 0xff00) | err;
+	m_maincpu->g65816_set_reg(g65816_device::G65816_P, p);
+	m_maincpu->g65816_set_reg(g65816_device::G65816_A, a);
 }
 
 std::string ample_host_device::fst_get_path1() {
@@ -1191,19 +1313,19 @@ void ample_host_device::host_fst()
 			terr = badSystemCall;
 			break;
 		}
-		toolbox_return(terr);
+		gsos_return(terr);
 		return;
 	}
 
 	if (m_host_directory.empty()) {
-		toolbox_return(networkError);
+		gsos_return(networkError);
 		return;
 	}
 
     unsigned klass = call >> 13;
     call &= 0x1fff;
     if (klass > 1) {
-    	toolbox_return(invalidClass);
+    	gsos_return(invalidClass);
     	return;
     }
 
@@ -1221,7 +1343,7 @@ void ample_host_device::host_fst()
         path1 = fst_get_path1();
         terr = check_path(path1);
         if (terr) {
-        	toolbox_return(terr);
+        	gsos_return(terr);
         	return;
         }
         break;
@@ -1232,13 +1354,13 @@ void ample_host_device::host_fst()
 
         terr = check_path(path1);
         if (terr) {
-        	toolbox_return(terr);
+        	gsos_return(terr);
         	return;
         }
 
         terr = check_path(path2);
         if (terr) {
-        	toolbox_return(terr);
+        	gsos_return(terr);
         	return;
         }
 
@@ -1252,25 +1374,25 @@ void ample_host_device::host_fst()
       case 0x17: // get mark
       case 0x18: // set eof
       case 0x19: // get eof
-      	e = fst_get_file_entry();
+      	e = fst_get_file_entry(m_maincpu->g65816_get_reg(g65816_device::G65816_Y));
       	if (!e) {
-      		toolbox_return(invalidRefNum);
+      		gsos_return(invalidRefNum);
       		return;
       	}
       	if (e->type == file_directory) {
-      		toolbox_return(badStoreType);
+      		gsos_return(badStoreType);
       		return;
       	}
       	break;
 
       case 0x1c: // get dir entry
-      	e = fst_get_file_entry();
+      	e = fst_get_file_entry(m_maincpu->g65816_get_reg(g65816_device::G65816_Y));
       	if (!e) {
-      		toolbox_return(invalidRefNum);
+      		gsos_return(invalidRefNum);
       		return;
       	}
       	if (e->type != file_directory) {
-      		toolbox_return(badStoreType);
+      		gsos_return(badStoreType);
       		return;
       	}
       	break;
@@ -1346,12 +1468,21 @@ void ample_host_device::host_fst()
     if (terr) {
     	LOGMASKED(LOG_FST, " --> %04x (%s)\n", terr, error_name(terr));
     }
-    toolbox_return(terr);
+    gsos_return(terr);
 }
 
-ample_host_device::file_entry *ample_host_device::fst_get_file_entry()
+ample_host_device::file_entry *ample_host_device::fst_get_file_entry(unsigned cookie)
 {
-	unsigned cookie = m_maincpu->g65816_get_reg(g65816_device::G65816_Y);
+	if (cookie == 0 || cookie > m_files.size()) return nullptr;
+
+	auto &e = m_files[cookie-1];
+	if (!e) return nullptr;
+	return &e;
+}
+
+ample_host_device::file_entry *ample_host_device::mli_get_file_entry(unsigned cookie)
+{
+	cookie = cookie - 0x80;
 	if (cookie == 0 || cookie > m_files.size()) return nullptr;
 
 	auto &e = m_files[cookie-1];
@@ -1379,7 +1510,6 @@ unsigned ample_host_device::fst_flush(unsigned klass, file_entry &e)
 	if (ok < 0) return map_errno(errno);
 	return 0;
 }
-
 
 
 
@@ -1418,19 +1548,8 @@ unsigned ample_host_device::fst_read(unsigned klass, file_entry &e)
 	transfer_count = ok;
 	buffer.resize(transfer_count);
 
-	int tr = e.translate;
-	if (tr == translate_crlf) {
-		for (auto &c : buffer) {
-			if (c == '\n') c = '\r';
-		}
-	}
-	if (tr == translate_merlin) {
-		for (auto &c : buffer) {
-          if (c == '\t') c = 0xa0;
-          if (c == '\n') c = '\r';
-          if (c != ' ') c |= 0x80;
-		}		
-	}
+
+	translate_in(buffer, e.translate);
 
 	unsigned newline_mask;
 	newline_mask = m_space->read_word(global_buffer);
@@ -1493,18 +1612,7 @@ unsigned ample_host_device::fst_write(unsigned klass, file_entry &e)
 		buffer[i] = m_space->read_byte(data_buffer++);
 	}
 
-	int tr = e.translate;
-	if (tr == translate_crlf) {
-		for (auto &c : buffer)
-			if (c == '\r') c = '\n';
-	}
-	if (tr == translate_merlin) {
-		for (auto &c : buffer) {
-			if (c == 0xa0) c = '\t';
-			c &= 0x7f;
-			if (c == '\r') c = '\n';
-		}
-	}
+	translate_out(buffer, e.translate);
 
 	ssize_t ok = ::pwrite(e.fd, buffer.data(), request_count, e.offset);
 	if (ok < 0) return map_errno(errno);
@@ -1562,7 +1670,7 @@ unsigned ample_host_device::fst_set_eof(unsigned klass, file_entry &e)
 
 	LOGMASKED(LOG_FST, "fst_set_eof()\n");
 
-	// if (m_sysconfig->read() & 0x01) return drvrWrtProt;
+	// if (BIT(m_sysconfig->read(), BIT_HOST_READ_ONLY) return drvrWrtProt;
 
 	unsigned dp = m_maincpu->g65816_get_reg(g65816_device::G65816_D);
 	uint32_t pb = m_space->read_dword(dp + dp_param_blk_ptr) & 0x00ffffff;
@@ -1813,7 +1921,7 @@ unsigned ample_host_device::fst_change_path(unsigned klass, const std::string &p
 
 	LOGMASKED(LOG_FST, "fst_change_path(%s, %s)\n", path1.c_str(), path2.c_str());
 
-	if (m_sysconfig->read() & 0x01) return drvrWrtProt;
+	if (BIT(m_sysconfig->read(), BIT_HOST_READ_ONLY)) return drvrWrtProt;
 
 	struct stat st;
 	int ok;
@@ -1834,11 +1942,60 @@ unsigned ample_host_device::fst_change_path(unsigned klass, const std::string &p
 }
 
 
+int ample_host_device::mli_rename(unsigned dcb, const std::string &path1, const std::string &path2) {
+	// n.b. p8 rename is only allowed within the same directory.
+
+	if (BIT(m_sysconfig->read(), BIT_HOST_READ_ONLY)) return drvrWrtProt;
+
+	struct stat st;
+	int ok;
+
+	/* don't allow renaming the volume... */
+	ok = ::stat(path1.c_str(), &st);
+	if (ok < 0) return map_errno(errno, path1);
+	if (std::make_pair(st.st_dev, st.st_ino) == m_host_directory_id)
+		return invalidAccess;
+
+	/* rename will destroy any existing file but ChangePath will not */
+	ok = ::stat(path2.c_str(), &st);
+	if (ok == 0) return dupPathname;
+
+	if (::rename(path1.c_str(), path2.c_str()) < 0)
+		return map_errno(errno, path2);
+	return 0;	
+}
+
+
+
+
+/* returns -1 (volNotFound?) if not a /host/ path */
+int ample_host_device::mli_expand_path(std::string &s) {
+
+	bool absolute = false;
+	if (s[0] == '/') {
+		if (s.length() < 5 || core_strnicmp(s.c_str(), "/host", 5)) 
+			return -1;
+		if (s.length() > 5 && s[5] != '/')
+			return -1;
+		absolute = true;
+	} else {
+		if (m_mli_prefix.empty()) return -1;
+		absolute = false;
+	}
+
+	if (dotdot(s)) return badPathSyntax;
+
+	if (absolute) s = s.substr(6);
+	else s = m_mli_prefix + s;
+	return 0;
+}
+
+
 unsigned ample_host_device::fst_destroy(unsigned klass, const std::string &path) {
 
 	LOGMASKED(LOG_FST, "fst_destroy(%s)\n", path.c_str());
 
-	if (m_sysconfig->read() & 0x01) return drvrWrtProt;
+	if (BIT(m_sysconfig->read(), BIT_HOST_READ_ONLY)) return drvrWrtProt;
 
 	struct stat st;
 
@@ -1855,6 +2012,10 @@ unsigned ample_host_device::fst_destroy(unsigned klass, const std::string &path)
 
 	if (ok < 0) return map_errno(errno, path);
 	return 0;
+}
+
+int ample_host_device::mli_destroy(unsigned dcb, const std::string &path) {
+	return -1;
 }
 
 unsigned ample_host_device::fst_open(unsigned klass, const std::string &path) {
@@ -1908,7 +2069,7 @@ unsigned ample_host_device::fst_open(unsigned klass, const std::string &path) {
 	}
 
 
-	if ((m_sysconfig->read() & 0x01)) {
+	if (BIT(m_sysconfig->read(), BIT_HOST_READ_ONLY)) {
 		switch (request_access) {
 		case readEnableAllowWrite:
 			request_access = readEnable;
@@ -1963,11 +2124,11 @@ unsigned ample_host_device::fst_open(unsigned klass, const std::string &path) {
 	// prodos 16 doesn't return anything in the parameter block.
 
 
-	if (e.type == file_regular && (m_sysconfig->read() & 0x02)) {
+	if (e.type == file_regular && BIT(m_sysconfig->read(), BIT_HOST_TRANSLATE_TEXT)) {
 		if (fi.file_type == 0x04 || fi.file_type == 0xb0)
 			e.translate = translate_crlf;
 	}
-	if (e.type == file_regular && (m_sysconfig->read() & 0x04) && fi.file_type == 0x04) {
+	if (e.type == file_regular && fi.file_type == 0x04 && BIT(m_sysconfig->read(), BIT_HOST_TRANSLATE_MERLIN)) {
 		size_t n = path.length();
 		if (n >= 3 && toupper(path[n-1]) == 'S' && path[n-2] == '.')
 			e.translate = translate_merlin; 
@@ -1989,6 +2150,10 @@ unsigned ample_host_device::fst_open(unsigned klass, const std::string &path) {
 	m_maincpu->g65816_set_reg(g65816_device::G65816_X, cookie);
 	m_maincpu->g65816_set_reg(g65816_device::G65816_Y, access); // actual access needed in fcr
 	return rv;
+}
+
+int ample_host_device::mli_open(unsigned dcb, const std::string &path) {
+	return -1;
 }
 
 
@@ -2044,11 +2209,16 @@ unsigned ample_host_device::fst_get_file_info(unsigned klass, const std::string 
 	return rv;
 }
 
+int ample_host_device::mli_get_file_info(unsigned dcb, const std::string &path) {
+	return -1;
+}
+
+
 unsigned ample_host_device::fst_create(unsigned klass, const std::string &path) {
 
 	LOGMASKED(LOG_FST, "fst_create(%s)\n", path.c_str());
 
-	if (m_sysconfig->read() & 0x01) return drvrWrtProt;
+	if (BIT(m_sysconfig->read(), BIT_HOST_READ_ONLY)) return drvrWrtProt;
 
 	unsigned dp = m_maincpu->g65816_get_reg(g65816_device::G65816_D);
 	uint32_t pb = m_space->read_dword(dp + dp_param_blk_ptr) & 0x00ffffff;
@@ -2172,15 +2342,17 @@ unsigned ample_host_device::fst_create(unsigned klass, const std::string &path) 
 		return 0;
 	}
 	return badStoreType;
+}
 
+int ample_host_device::mli_create(unsigned dcb, const std::string &path) {
+	return -1;
 }
 
 unsigned ample_host_device::fst_set_file_info(unsigned klass, const std::string &path) {
 
 	LOGMASKED(LOG_FST, "fst_set_file_info(%s)\n", path.c_str());
 
-	if (m_sysconfig->read() & 0x01) return drvrWrtProt;
-
+	if (BIT(m_sysconfig->read(), BIT_HOST_READ_ONLY)) return drvrWrtProt;
 
 	unsigned dp = m_maincpu->g65816_get_reg(g65816_device::G65816_D);
 	uint32_t pb = m_space->read_dword(dp + dp_param_blk_ptr) & 0x00ffffff;
@@ -2238,6 +2410,9 @@ unsigned ample_host_device::fst_set_file_info(unsigned klass, const std::string 
 	return set_file_info(path, fi);
 }
 
+int ample_host_device::mli_set_file_info(unsigned dcb, const std::string &path) {
+	return -1;
+}
 
 
 
@@ -2254,16 +2429,589 @@ unsigned ample_host_device::fst_erase(unsigned klass) {
 	return notBlockDev;
 }
 
-
 unsigned ample_host_device::fst_clear_backup(unsigned klass, const std::string &path) {
 	LOGMASKED(LOG_FST, "fst_clear_backup(%s)\n", path.c_str());
 
 	return invalidFSTop;
 }
 
+
+#pragma mark - mli
+
+enum {
+	path_absolute_host,
+	path_absolute,
+	path_relative,
+};
+int classify_path(const std::string &s) {
+	if (s[0] != '/') return path_relative;
+	if (s.length() < 5) return path_absolute;
+	if (core_strnicmp("/host", s.c_str(), 5)) return path_absolute;
+	if (s.length() == 5 || s[5] == '/') return path_absolute_host;
+	return path_absolute;
+}
+
+void ample_host_device::host_mli() {
+
+	unsigned s = m_maincpu->g65816_get_reg(g65816_device::G65816_S);
+	// unsigned p = m_maincpu->g65816_get_reg(g65816_device::G65816_P);
+	unsigned rts = m_space->read_word(0x0100 | s + 1);
+	unsigned call = m_space->read_byte(rts);
+	unsigned dcb = m_space->read_word(rts + 1);
+
+	unsigned pcount = m_space->read_byte(dcb);
+	if (pcount != mli_expected_pcount(call)) {
+		/* invalidPcount but let prodos deal with it */
+		m_maincpu->g65816_set_reg(g65816_device::G65816_PC, m_mli_vector);
+		return;
+	}
+
+	unsigned pp;
+	unsigned refNum = 0;
+	int err = 0;
+	std::string path1;
+	std::string path2;
+	file_entry *e = nullptr;
+
+	switch (call) {
+
+	case CREATE:
+	case DESTROY:
+	case SET_FILE_INFO:
+	case GET_FILE_INFO:
+	case OPEN:
+		/* path-based.... */
+		pp = m_space->read_word(dcb + 1);
+		path1 = read_string(pp, 1);
+		err = mli_expand_path(path1);
+		break;
+	case RENAME:
+		/* path-based.... */
+		pp = m_space->read_word(dcb + 1);
+		path1 = read_string(pp, 1);
+		err = mli_expand_path(path1);
+		if (err) break;
+		pp = m_space->read_word(dcb + 1);
+		path2 = read_string(pp, 3);
+		err = mli_expand_path(path2);
+		break;
+
+		/* refNum based */
+    case NEWLINE:
+    case READ:
+    case WRITE:
+    case SET_MARK:
+    case GET_MARK:
+    case SET_EOF:
+    case GET_EOF:
+    case SET_BUF:
+    case GET_BUF:
+    	refNum = m_space->read_byte(dcb + 1);
+    	e = mli_get_file_entry(refNum);
+    	if (!e) err = -1;
+    	break;
+
+    case CLOSE:
+    case FLUSH:
+    	/* these may also have a 0 refnum. */
+    	refNum = m_space->read_byte(dcb + 1);
+    	if (refNum == 0) break;
+    	e = mli_get_file_entry(refNum);
+    	if (!e) err = -1;
+    	break;
+	}
+
+
+	bool tail = false;
+	if (err) call = 0;
+
+	switch (call) {
+	default:
+		err = -1;
+		break;
+
+	case OPEN:
+		err = mli_open(dcb, m_host_directory + path1);
+		break;
+
+	case CREATE:
+		err = mli_create(dcb, m_host_directory + path1);
+		break;
+
+	case DESTROY:
+		err = mli_destroy(dcb, m_host_directory + path1);
+		break;
+
+	case SET_FILE_INFO:
+		err = mli_set_file_info(dcb, m_host_directory + path1);
+		break;
+
+	case GET_FILE_INFO:
+		err = mli_get_file_info(dcb, m_host_directory + path1);
+		break;
+
+	case RENAME:
+		err = mli_rename(dcb, m_host_directory + path1, m_host_directory + path2);
+		break;
+
+	case CLOSE:
+		err = e ? mli_close(dcb, *e) : mli_close(dcb);
+		break;
+	case FLUSH:
+		err = e ? mli_flush(dcb, *e) : mli_flush(dcb);
+		break;
+	case READ:
+		err = mli_read(dcb, *e);
+		break;
+	case WRITE:
+		err = mli_write(dcb, *e);
+		break;
+	case NEWLINE:
+		err = mli_newline(dcb, *e);
+		break;
+
+	case SET_MARK:
+		err = mli_set_mark(dcb, *e);
+		break;
+
+	case GET_MARK:
+		err = mli_get_mark(dcb, *e);
+		break;
+
+	case SET_EOF:
+		err = mli_set_eof(dcb, *e);
+		break;
+
+	case GET_EOF:
+		err = mli_get_eof(dcb, *e);
+		break;
+
+	case SET_BUF:
+		err = mli_set_buf(dcb, *e);
+		break;
+
+	case GET_BUF:
+		err = mli_get_buf(dcb, *e);
+		break;
+
+	case WRITE_BLOCK:
+	case READ_BLOCK:
+		err = mli_rw_block(dcb);
+		break;
+
+	case QUIT:
+		err = mli_quit(dcb);
+		break;
+
+	case ONLINE:
+		err = mli_online(dcb);
+		break;
+
+	case SET_PREFIX:
+		err = mli_set_prefix(dcb);
+		break;
+
+	case ONLINE | 0x20:
+		tail = true;
+		err = mli_online_tail(dcb);
+		break;
+
+	case SET_PREFIX | 0x20:
+		tail = true;
+		err = mli_set_prefix_tail(dcb);
+		break;
+	}
+
+	if (tail) {
+		/* use the error code from prodos. */
+		for (unsigned i = 0; i <16; ++i) {
+			m_space->write_byte(0x80 + i, m_mli_zp_save[i]);
+		}
+		m_maincpu->g65816_set_reg(g65816_device::G65816_PC, m_mli_rts + 3);
+		return;
+	}
+
+
+	if (err == -1) {
+		/* let prodos handle it */
+		m_maincpu->g65816_set_reg(g65816_device::G65816_PC, m_mli_vector);
+		return;
+	}
+
+	if (err == -2) {
+
+		enum {
+			JMP = 0x4c,
+			JSR = 0x20,
+			WDM = 0x42,
+		};
+
+		/* set up our tail patch */
+		for (unsigned i = 0; i < 16; ++i) {
+			m_mli_zp_save[i] = m_space->read_byte(0x80 + i);
+		}
+		m_mli_call = call;
+		m_mli_dcb = dcb;
+		m_mli_rts = rts;
+		m_space->write_byte(0x80 + 0, JSR);
+		m_space->write_word(0x80 + 1, m_mli_vector);
+		m_space->write_byte(0x80 + 3, call);
+		m_space->write_word(0x80 + 4, dcb);
+
+		m_space->write_byte(0x80 + 6, JSR);
+		m_space->write_word(0x80 + 7, 0xbf00);
+		m_space->write_byte(0x80 + 9, call | 0x20);
+		m_space->write_word(0x80 + 10, dcb);
+
+		/* replace the rts address */
+		m_space->write_word(0x0100 | s + 1, 0x0082);
+		m_maincpu->g65816_set_reg(g65816_device::G65816_PC, m_mli_vector);
+		return;		
+	}
+
+
+	if (err >= 0) {
+		/* we handled it */
+		m_maincpu->g65816_set_reg(g65816_device::G65816_PC, rts + 3);
+		mli_return(err);
+	}
+}
+
+#if 0
+void ample_host_device::host_mli_tail() {
+	unsigned p = m_maincpu->g65816_get_reg(g65816_device::G65816_P);
+	if ((p & 0x01) == 0) {
+		/* carry clear */
+		switch(m_mli_call) {
+		case SET_PREFIX:
+			m_mli_prefix.clear();
+			break;
+		case ONLINE:
+			mli_online_tail(m_mli_dcb);
+		}
+	}
+
+	for (unsigned i = 0; i < 16; ++i) {
+		m_space->write_byte(0x80 + i, m_mli_zp_save[i]);
+	}
+	m_maincpu->g65816_set_reg(g65816_device::G65816_PC, m_mli_rts);
+}
+#endif
+
+int ample_host_device::mli_quit(unsigned dcb) {
+	m_files.clear();
+	return -1;
+}
+
+
+int ample_host_device::mli_rw_block(unsigned dcb) {
+	return -1;
+}
+
+int ample_host_device::mli_newline(unsigned dcb, file_entry &e) {
+
+	e.newline_mask = m_space->read_byte(dcb + 2);
+	e.newline_char = m_space->read_byte(dcb + 3);
+	return 0;
+}
+
+
+int ample_host_device::mli_close(unsigned dcb) {
+	unsigned level = m_space->read_byte(MLI_LEVEL);
+	for (auto &e : m_files) {
+		if (e && e.level < level) {
+			e.close();
+		}
+	}
+	while (m_files.size() && !m_files.back()) m_files.pop_back();
+	return -1;
+}
+
+int ample_host_device::mli_close(unsigned dcb, file_entry &e) {
+	e.close();
+	if (&m_files.back() == &e) m_files.pop_back();
+	return 0;
+}
+
+
+int ample_host_device::mli_flush(unsigned dcb) {
+	unsigned level = m_space->read_byte(MLI_LEVEL);
+	for (auto &e : m_files) {
+		if (e && e.level < level && e.fd >= 0) {
+			::fsync(e.fd);
+		}
+	}
+	return -1;
+}
+
+
+int ample_host_device::mli_flush(unsigned dcb, file_entry &e) {
+	if (e.fd >= 0) {
+		int ok = ::fsync(e);
+		if (ok < 0) return map_errno(ok);
+	}
+	return 0;
+}
+
+int ample_host_device::mli_read(unsigned dcb, file_entry &e) {
+
+	// todo -- does this work with aux memory swapping???
+	unsigned data_buffer = m_space->read_word(dcb + 2);
+	unsigned request_count = m_space->read_word(dcb + 4);
+	unsigned transfer_count = 0;
+	m_space->write_word(dcb + 6, 0); // pre-zero transfer count.
+
+	std::vector<uint8_t> buffer(request_count);
+	if (e.type == file_directory) {
+		if (e.offset > e.dir_file.size()) {
+			// ???
+			transfer_count = 0;
+		} else {
+			auto iter = e.dir_file.begin() + e.offset;
+			auto end = e.dir_file.end();
+			std::copy(iter, end, buffer.begin());
+			transfer_count = std::distance(iter, end);
+		}
+	} else {
+		int ok = ::pread(e.fd, buffer.data(), request_count, e.offset);
+		if (ok < 0) return map_errno(errno);
+		transfer_count = ok;
+	}
+
+	translate_in(buffer, e.translate);
+
+	if (e.newline_mask) {
+		for (size_t i = 0; i <transfer_count; ++i) {
+			auto c = buffer[i];
+			if ((c & e.newline_mask) == e.newline_char) {
+				transfer_count = i + 1;
+				break;
+			}
+		}
+	}
+
+	e.offset += transfer_count;
+	buffer.resize(transfer_count);
+	m_space->write_word(dcb + 6, transfer_count);
+	for (auto c : buffer)
+		m_space->write_byte(data_buffer++, c);
+
+	return 0;
+}
+
+int ample_host_device::mli_write(unsigned dcb, file_entry &e) {
+
+	//if (BIT(m_sysconfig->read(), BIT_HOST_READ_ONLY)) return drvrWrtProt;
+
+	unsigned data_buffer = m_space->read_word(dcb + 2);
+	unsigned request_count = m_space->read_word(dcb + 4);
+	m_space->write_word(dcb + 6, 0); // pre-zero transfer count.
+
+
+	if (e.type == file_directory) return invalidAccess;
+
+	std::vector<uint8_t> buffer;
+	buffer.reserve(request_count);
+
+	for(size_t i = 0; i < request_count; ++i)
+		buffer.push_back(m_space->read_byte(data_buffer++));
+
+	translate_out(buffer, e.translate);
+
+	ssize_t ok = ::pwrite(e.fd, buffer.data(), request_count, e.offset);
+	if (ok < 0) return map_errno(errno);
+
+	e.offset += ok;
+	m_space->write_word(dcb + 6, ok);
+	return 0;
+}
+
+int ample_host_device::mli_get_eof(unsigned dcb, file_entry &e) {
+	ssize_t eof = 0;
+	switch(e.type) {
+	case file_directory:
+		eof = e.dir_file.size();
+		break;
+	case file_regular:
+	case file_resource:
+		eof = ::lseek(e.fd, 0, SEEK_END);
+		if (eof < 0) return map_errno(errno);
+		break;
+	}
+	if (eof > 0x00ffffff) return outOfRange;
+
+	// 24-bit write.
+	m_space->write_word(dcb + 2, eof);
+	m_space->write_byte(dcb + 4, eof >> 16);
+	return 0;
+}
+
+int ample_host_device::mli_set_eof(unsigned dcb, file_entry &e) {
+
+	if (BIT(m_sysconfig->read(), BIT_HOST_READ_ONLY)) return drvrWrtProt;
+
+	unsigned eof = m_space->read_dword(dcb + 2) & 0x00ffffff;
+
+	int ok;
+
+	switch(e.type) {
+	case file_directory:
+		return invalidAccess;
+		break;
+	case file_regular:
+	case file_resource:
+		ok = ::ftruncate(e.fd, eof);
+		if (ok < 0) return map_errno(errno);
+		e.offset = std::min(e.offset, (off_t)eof);
+		break;
+	}
+
+	return 0;
+}
+
+
+int ample_host_device::mli_get_mark(unsigned dcb, file_entry &e) {
+
+	// 24-bit write.
+	m_space->write_word(dcb + 2, e.offset);
+	m_space->write_byte(dcb + 4, e.offset >> 16);
+
+	return 0;
+}
+
+
+int ample_host_device::mli_set_mark(unsigned dcb, file_entry &e) {
+
+	// TODO - positionError if offset > eof
+	e.offset = m_space->read_dword(dcb + 2) & 0x00ffffff;
+	return 0;
+}
+
+
+int ample_host_device::mli_get_buf(unsigned dcb, file_entry &e) {
+
+	m_space->write_word(dcb + 2, e.buffer);
+	return 0;
+}
+
+int ample_host_device::mli_set_buf(unsigned dcb, file_entry &e) {
+
+	unsigned buffer = m_space->read_word(dcb + 2);
+	if (buffer & 0xff) return badBufferAddress;
+	e.buffer = buffer;
+	return 0;
+}
+
+
+
+int ample_host_device::mli_online(unsigned dcb) {
+
+	/* if this is specific to our unit, handle it. if it is for all units, set up the tail patch */
+	unsigned unit = m_space->read_byte(dcb + 1);
+	unsigned buffer_address = m_space->read_word(dcb + 2);
+
+	if (unit == m_mli_unit) {
+
+		if (!buffer_address) return badBufferAddress;
+		/* slot 2, drive 1 */
+		m_space->write_byte(buffer_address++, m_mli_unit | 0x04);
+		m_space->write_byte(buffer_address++, 'H');
+		m_space->write_byte(buffer_address++, 'O');
+		m_space->write_byte(buffer_address++, 'S');
+		m_space->write_byte(buffer_address++, 'T');
+		return 0;
+	}
+
+	return unit == 0 ? -2 : -1;
+
+#if 0
+	if (unit == 0) {
+
+		unsigned s = m_maincpu->g65816_get_reg(g65816_device::G65816_S);
+		unsigned rts = m_space->read_word(0x0100 + s + 1) + 4;
+
+		/* set up the tail call */
+		for (unsigned i = 0; i < 16; ++i) {
+			m_mli_zp_save[i] = m_space->read_byte(0x80 + i);
+		}
+
+		unsigned i = 0x80;
+		// JSR original_mli_vector
+		m_space->write_byte(i, JSR); i += 1;
+		m_space->write_word(i, m_mli_vector); i += 2;
+		m_space->write_byte(i, 0xc5); i += 1;
+		m_space->write_word(i, dcb); i += 2;
+
+		m_space->write_byte(i, JSR); i += 1;
+		m_space->write_word(i, 0xbf00); i += 2;
+		m_space->write_byte(i, 0xc5 | 0x20); i += 1;
+		m_space->write_word(i, dcb); i += 2;
+
+		m_space->write_byte(i, JMP); i += 1;
+		m_space->write_word(i, rts+1); i += 2;
+		return -1;
+	}
+
+	else return -1;
+#endif
+}
+
+int ample_host_device::mli_online_tail(unsigned dcb) {
+
+	// unsigned unit = m_space->read_byte(dcb + 1);
+	unsigned buffer_address = m_space->read_word(dcb + 2);
+
+
+	/* at this point, ProDOS has filled out the buffer.  add ourself */
+	/* TODO -- if overwriting 0, need to insert an extra 0 entry afterwards as an end of list indicator */
+
+	for (unsigned i = 0; i < 16; ++i, buffer_address += 16) {
+
+		unsigned x = m_space->read_byte(buffer_address);
+		if (x == 0 || ((x & 0xf0) == m_mli_unit)) {
+
+			m_space->write_byte(buffer_address++, m_mli_unit | 0x04);
+			m_space->write_byte(buffer_address++, 'H');
+			m_space->write_byte(buffer_address++, 'O');
+			m_space->write_byte(buffer_address++, 'S');
+			m_space->write_byte(buffer_address++, 'T');
+
+			break;
+		}
+	}
+	return 0;
+}
+
+
+int ample_host_device::mli_set_prefix(unsigned dcb) {
+
+	std::string pfx = read_string(m_space->read_word(dcb + 1), 1);
+	int ok = mli_expand_path(pfx);
+	if (ok < 0) return m_mli_prefix.empty() ? -1 : -2;
+
+	struct stat st;
+	std::string path = m_host_directory + pfx;
+	ok = ::stat(path.c_str(), &st);
+	if (ok < 0) return map_errno(errno, path);
+	if (!S_ISREG(st.st_mode)) return badStoreType;
+
+
+	while (!pfx.empty() && pfx.back() == '/') pfx.pop_back();
+	pfx.push_back('/');
+	m_mli_prefix = std::move(pfx);
+	return 0;
+}
+
+int ample_host_device::mli_set_prefix_tail(unsigned dcb) {
+	unsigned acc = m_maincpu->g65816_get_reg(g65816_device::G65816_A) & 0xff;
+	if (!acc) m_mli_prefix.clear();
+	return acc;
+}
+
+
 void ample_host_device::host_print()
 {
-	/* x:y is ptr to cstring to print, a is type of string */
+	/* x:y is ptr to string to print, a is type of string */
 	/* 0 = cstring, 1 = pstring, 2 = gsosstring, $8000 is add \n */
 
 	const unsigned a = m_maincpu->g65816_get_reg(g65816_device::G65816_A);
