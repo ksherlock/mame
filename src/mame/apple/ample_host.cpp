@@ -1013,13 +1013,13 @@ INPUT_PORTS_START( ample_host )
 	PORT_CONFSETTING(    0x01, DEF_STR(Yes))
 	PORT_CONFNAME( 0x02, 0x00, "Read Only")
 	PORT_CONFSETTING(    0x00, DEF_STR(No))
-	PORT_CONFSETTING(    0x01, DEF_STR(Yes))
+	PORT_CONFSETTING(    0x03, DEF_STR(Yes))
 	PORT_CONFNAME( 0x04, 0x04, "CR/LF Translation")
 	PORT_CONFSETTING(    0x00, DEF_STR(No))
-	PORT_CONFSETTING(    0x02, DEF_STR(Yes))
+	PORT_CONFSETTING(    0x04, DEF_STR(Yes))
 	PORT_CONFNAME( 0x08, 0x00, "Merlin Translation")
 	PORT_CONFSETTING(    0x00, DEF_STR(No))
-	PORT_CONFSETTING(    0x04, DEF_STR(Yes))
+	PORT_CONFSETTING(    0x08, DEF_STR(Yes))
 INPUT_PORTS_END
 
 ioport_constructor ample_host_device::device_input_ports() const
