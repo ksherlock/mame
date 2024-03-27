@@ -77,8 +77,10 @@ HASH = apple1.xml \
 	apple2_cass.xml apple2_flop_clcracked.xml apple2_flop_misc.xml apple2_flop_orig.xml \
 	apple2gs_flop_misc.xml apple2gs_flop_orig.xml apple2gs_flop_clcracked.xml \
 	apple3.xml cecflop.xml \
-	mac_hdd.xml mac_flop.xml mac_hdflop.xml mac_flop_clcracked.xml mac_flop_orig.xml \
+	mac_hdd.xml mac_flop.xml mac_hdflop.xml mac_flop_clcracked.xml mac_flop_orig.xml mac_cdrom.xml \
 	st_flop.xml st_cart.xml \
+	oric1_cass.xml \
+	coco_cart.xml coco_flop.xml \
 	softwarelist.dtd
 
 mame-data.tgz:
