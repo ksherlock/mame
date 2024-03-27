@@ -26,7 +26,7 @@
 
 #define VERBOSE -1
 #define LOG_FST 2
-#define LOG_OUTPUT_STREAM std::cout
+// #define LOG_OUTPUT_STREAM std::cout
 #include "logmacro.h"
 
 enum {
@@ -1366,10 +1366,17 @@ void ample_host_device::host_fst()
 
         break;
 
-      case 0x012: // read
-      case 0x013: // write
       case 0x14: // close
       case 0x15: // flush
+      	e = fst_get_file_entry(m_maincpu->g65816_get_reg(g65816_device::G65816_Y));
+      	if (!e) {
+      		gsos_return(invalidRefNum);
+      		return;
+      	}
+      	break;
+
+      case 0x12: // read
+      case 0x13: // write
       case 0x16: // set mark
       case 0x17: // get mark
       case 0x18: // set eof
@@ -1493,7 +1500,7 @@ ample_host_device::file_entry *ample_host_device::mli_get_file_entry(unsigned co
 unsigned ample_host_device::fst_close(unsigned klass, file_entry &e)
 {
 
-	LOGMASKED(LOG_FST, "fst_close()\n");
+	LOGMASKED(LOG_FST, "fst_close(%s)\n", e.path.c_str());
 
 	e.close();
 	if (&m_files.back() == &e) m_files.pop_back(); 
@@ -1504,7 +1511,9 @@ unsigned ample_host_device::fst_close(unsigned klass, file_entry &e)
 unsigned ample_host_device::fst_flush(unsigned klass, file_entry &e)
 {
 
-	LOGMASKED(LOG_FST, "fst_flush()\n");
+	LOGMASKED(LOG_FST, "fst_flush(%s)\n", e.path.c_str());
+
+	if (e.type == file_directory) return 0;
 
 	int ok = ::fsync(e.fd);
 	if (ok < 0) return map_errno(errno);
@@ -1516,7 +1525,7 @@ unsigned ample_host_device::fst_flush(unsigned klass, file_entry &e)
 unsigned ample_host_device::fst_read(unsigned klass, file_entry &e)
 {
 
-	LOGMASKED(LOG_FST, "fst_read()\n");
+	LOGMASKED(LOG_FST, "fst_read(%s)\n", e.path.c_str());
 
 	unsigned dp = m_maincpu->g65816_get_reg(g65816_device::G65816_D);
 	uint32_t pb = m_space->read_dword(dp + dp_param_blk_ptr) & 0x00ffffff;
@@ -1585,7 +1594,7 @@ unsigned ample_host_device::fst_read(unsigned klass, file_entry &e)
 unsigned ample_host_device::fst_write(unsigned klass, file_entry &e)
 {
 
-	LOGMASKED(LOG_FST, "fst_write()\n");
+	LOGMASKED(LOG_FST, "fst_write(%s)\n", e.path.c_str());
 
 	unsigned dp = m_maincpu->g65816_get_reg(g65816_device::G65816_D);
 	uint32_t pb = m_space->read_dword(dp + dp_param_blk_ptr) & 0x00ffffff;
@@ -1632,7 +1641,7 @@ unsigned ample_host_device::fst_write(unsigned klass, file_entry &e)
 unsigned ample_host_device::fst_get_eof(unsigned klass, file_entry &e)
 {
 
-	LOGMASKED(LOG_FST, "fst_get_eof()\n");
+	LOGMASKED(LOG_FST, "fst_get_eof(%s)\n", e.path.c_str());
 
 	unsigned dp = m_maincpu->g65816_get_reg(g65816_device::G65816_D);
 	uint32_t pb = m_space->read_dword(dp + dp_param_blk_ptr) & 0x00ffffff;
@@ -1651,7 +1660,7 @@ unsigned ample_host_device::fst_get_eof(unsigned klass, file_entry &e)
 unsigned ample_host_device::fst_get_mark(unsigned klass, file_entry &e)
 {
 
-	LOGMASKED(LOG_FST, "fst_get_mark()\n");
+	LOGMASKED(LOG_FST, "fst_get_mark(%s)\n", e.path.c_str());
 
 	unsigned dp = m_maincpu->g65816_get_reg(g65816_device::G65816_D);
 	uint32_t pb = m_space->read_dword(dp + dp_param_blk_ptr) & 0x00ffffff;
@@ -1668,7 +1677,7 @@ unsigned ample_host_device::fst_get_mark(unsigned klass, file_entry &e)
 unsigned ample_host_device::fst_set_eof(unsigned klass, file_entry &e)
 {
 
-	LOGMASKED(LOG_FST, "fst_set_eof()\n");
+	LOGMASKED(LOG_FST, "fst_set_eof(%s)\n", e.path.c_str());
 
 	// if (BIT(m_sysconfig->read(), BIT_HOST_READ_ONLY) return drvrWrtProt;
 
@@ -1697,7 +1706,7 @@ unsigned ample_host_device::fst_set_eof(unsigned klass, file_entry &e)
 unsigned ample_host_device::fst_set_mark(unsigned klass, file_entry &e)
 {
 
-	LOGMASKED(LOG_FST, "fst_set_mark()\n");
+	LOGMASKED(LOG_FST, "fst_set_mark(%s)\n", e.path.c_str());
 
 	unsigned dp = m_maincpu->g65816_get_reg(g65816_device::G65816_D);
 	uint32_t pb = m_space->read_dword(dp + dp_param_blk_ptr) & 0x00ffffff;
@@ -1755,7 +1764,7 @@ unsigned ample_host_device::fst_volume(unsigned klass) {
 
 unsigned ample_host_device::fst_get_dir_entry(unsigned klass, file_entry &e) {
 
-	LOGMASKED(LOG_FST, "fst_get_dir_entry()\n");
+	LOGMASKED(LOG_FST, "fst_get_dir_entry(%s)\n", e.path.c_str());
 
 	unsigned dp = m_maincpu->g65816_get_reg(g65816_device::G65816_D);
 	uint32_t pb = m_space->read_dword(dp + dp_param_blk_ptr) & 0x00ffffff;
@@ -2095,7 +2104,6 @@ unsigned ample_host_device::fst_open(unsigned klass, const std::string &path) {
 	}
 
 	if (rv) return rv;
-	e.access = access;
 
 
 	if (klass) {
@@ -2123,6 +2131,13 @@ unsigned ample_host_device::fst_open(unsigned klass, const std::string &path) {
 	}
 	// prodos 16 doesn't return anything in the parameter block.
 
+
+	/* bit 14 of access is a resource flag */
+	/* bit 15 of access is a clean (1) / dirty(0) flag */
+	access |= 0x8000;
+	if (resource_number) access |= 0x4000;
+
+	e.access = access;
 
 	if (e.type == file_regular && BIT(m_sysconfig->read(), BIT_HOST_TRANSLATE_TEXT)) {
 		if (fi.file_type == 0x04 || fi.file_type == 0xb0)
