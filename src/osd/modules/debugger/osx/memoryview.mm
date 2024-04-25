@@ -334,10 +334,18 @@
 
 	[menu insertItem:[NSMenuItem separatorItem] atIndex:index++];
 
+#ifdef __AMPLE__
+	/* don't use command-V for show physical address.... */
+	NSMenuItem *logicalItem = [menu insertItemWithTitle:@"Logical Addresses"
+												 action:@selector(showPhysicalAddresses:)
+										  keyEquivalent:@""
+												atIndex:index++];
+#else
 	NSMenuItem *logicalItem = [menu insertItemWithTitle:@"Logical Addresses"
 												 action:@selector(showPhysicalAddresses:)
 										  keyEquivalent:@"v"
 												atIndex:index++];
+#endif
 	[logicalItem setTarget:self];
 	[logicalItem setTag:FALSE];
 
