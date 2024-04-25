@@ -398,8 +398,11 @@ u8 const inp_header::MAGIC[] = { 'M', 'A', 'M', 'E', 'I', 'N', 'P', 0 };
 //  BUILT-IN CORE MAPPINGS
 //**************************************************************************
 
+#ifdef AMPLE
+#include "inpttype-ample.ipp"
+#else
 #include "inpttype.ipp"
-
+#endif
 
 
 //**************************************************************************
