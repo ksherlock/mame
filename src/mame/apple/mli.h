@@ -25,7 +25,9 @@ enum {
   READ_BLOCK = 0x80,
   WRITE_BLOCK = 0x81,
   GET_TIME = 0x82,
-  QUIT = 0x65
+  QUIT = 0x65,
+
+  HOST_INIT = 0x99
 };
 
 #define badBufferAddress 0x56
