@@ -23,10 +23,12 @@
 #include "mli.h"
 
 #include <iostream>
+#include <algorithm>
 
 #define VERBOSE -1
 #define LOG_FST 2
-// #define LOG_OUTPUT_STREAM std::cout
+#define LOG_MLI 4
+#define LOG_OUTPUT_STREAM std::cout
 #include "logmacro.h"
 
 enum {
@@ -48,6 +50,8 @@ enum {
 	BIT_HOST_TRANSLATE_TEXT,
 	BIT_HOST_TRANSLATE_MERLIN
 };
+
+
 
 
 struct ample_host_device::file_entry {
@@ -146,12 +150,22 @@ namespace {
 	const unsigned global_buffer = 0x009a00;
 
 	enum {
+		// important prodos locations
+		MLI_ENTRY = 0xBF00,
 		MLI_LEVEL = 0xBFD8,   // current file level
 		MLI_DEVNUM = 0xBF30,  // last slot / drive
 		MLI_DEVCNT = 0xBF31,  // count - 1
 		MLI_DEVLST = 0xBF32,  // active device list
 		MLI_PFIXPTR = 0xbf9a, // active prefix?
 	};
+
+	enum {
+		path_absolute_host,
+		path_absolute,
+		path_relative,
+	};
+
+
 
 
 	#ifdef _WIN32
@@ -226,6 +240,13 @@ namespace {
 		return 0;
 	}
 
+	[[maybe_unused]] int classify_path(const std::string &s) {
+		if (s[0] != '/') return path_relative;
+		if (s.length() < 5) return path_absolute;
+		if (core_strnicmp("/host", s.c_str(), 5)) return path_absolute;
+		if (s.length() == 5 || s[5] == '/') return path_absolute_host;
+		return path_absolute;
+	}
 
 
 	unsigned map_errno(int xerrno) {
@@ -274,6 +295,87 @@ namespace {
 		if (xerrno == ENOENT) return map_enoent(path);
 		return map_errno(xerrno);
 	}
+
+
+	/* time to prodos 16 date/time */
+	[[maybe_unused]] uint32_t time_to_prodos(time_t t) {
+
+		uint32_t rv = 0;
+		if (time == 0) return rv;
+
+		struct tm *tm = localtime(&t);
+
+		rv |= (tm->tm_year % 100) << 9;
+		rv |= (tm->tm_mon + 1) << 5;
+		rv |= tm->tm_mday;
+
+		rv |= tm->tm_hour << 24;
+		rv |= tm->tm_min << 16;
+		return rv;
+	}
+
+	time_t prodos_to_time(uint32_t t) {
+
+		if (!t) return 0;
+
+		struct tm tm{};
+
+		tm.tm_year = (t >> 9) & 0x7f;
+		tm.tm_mon = ((t >> 5) & 0x0f) - 1;
+		tm.tm_mday = (t >> 0) & 0x1f;
+
+		tm.tm_hour = (t >> 24) & 0x1f;
+		tm.tm_min = (t >> 16) & 0x3f;
+		tm.tm_sec = 0;
+
+		tm.tm_isdst = -1;
+
+		// 00 - 39 => 2000-2039
+		// 40 - 99 => 1940-1999
+		if (tm.tm_year < 40) tm.tm_year += 100;
+
+		return mktime(&tm);
+	}
+
+	[[maybe_unused]] time_t hextime_to_time(uint64_t t) {
+
+		if (!t) return 0;
+		struct tm tm{};
+
+		tm.tm_sec = t & 0xff; t >>= 8;
+		tm.tm_min = t & 0xff; t >>= 8;
+		tm.tm_hour = t & 0xff; t >>= 8;
+		tm.tm_year = t & 0xff; t >>= 8;
+		tm.tm_mday = (t & 0xff) + 1; t >>= 8;
+		tm.tm_mon = t & 0xff;
+		tm.tm_isdst = -1;
+
+		return mktime(&tm);
+	}
+
+
+	/* time to gs/os date/time */
+	uint64_t time_to_hextime(time_t t) {
+		uint64_t rv = 0;
+
+		if (time == 0) return rv;
+		struct tm *tm = localtime(&t);
+		if (tm->tm_sec == 60) tm->tm_sec = 59;       /* leap second */
+
+		rv = (rv << 8) | (tm->tm_wday + 1);
+		rv = (rv << 8) | 0;
+		rv = (rv << 8) | tm->tm_mon;
+		rv = (rv << 8) | (tm->tm_mday - 1);
+		rv = (rv << 8) | tm->tm_year;
+		rv = (rv << 8) | tm->tm_hour;
+		rv = (rv << 8) | tm->tm_min;
+		rv = (rv << 8) | tm->tm_sec;
+
+
+		return rv;
+	}
+
+
 
 
 	off_t get_offset(const ample_host_device::file_entry &e, unsigned base, uint32_t displacement) {
@@ -373,7 +475,7 @@ namespace {
 		return fd;
 	}
 
-	std::vector<std::string> read_directory(const std::string &path, unsigned &terr) {
+	std::vector<std::string> read_directory(const std::string &path, unsigned &terr, bool mli=false) {
 
 
 		std::vector<std::string> dirs;
@@ -390,6 +492,14 @@ namespace {
 			if (!d) break;
 
 			if (d->d_name[0] == '.') continue;
+			int len = strlen(d->d_name);
+			if (mli && len > 15) continue;
+
+			// exclude names with extended characters.
+			if (std::any_of(d->d_name, d->d_name + len, [](char c){ return c > 0x7f; }))
+				continue;
+
+
 			switch(d->d_type) {
 			case DT_DIR:
 			case DT_REG:
@@ -421,6 +531,64 @@ namespace {
 		});
 		return dirs;
 	}
+
+
+	// see also path.cpp core_filename_extract_base()
+	std::string basename(const std::string &filename) noexcept {
+
+		auto loc = filename.find_last_of('/');
+		if (loc != std::string::npos)
+			return filename.substr(loc + 1);
+		else
+			return std::string();
+
+	}
+
+	unsigned lowercase_bits(const std::string &name) {
+		unsigned rv = 0x8000;
+		unsigned bit = 0x4000;
+
+		for (auto c : name) {
+			if (std::islower(c)) rv |= bit;
+			bit >>= 1;
+			if (!bit) break;
+		}
+
+		return rv;
+	}
+
+
+
+	void write_8(std::vector<uint8_t>::iterator &v, uint8_t x) {
+		*v++ = x;
+	}
+
+	void write_16(std::vector<uint8_t>::iterator &v, uint16_t x) {
+		*v++ = x & 0xff;
+		*v++ = (x >> 8) & 0xff;
+	}
+
+	void write_24(std::vector<uint8_t>::iterator &v, uint32_t x) {
+		*v++ = x & 0xff;
+		*v++ = (x >> 8) & 0xff;
+		*v++ = (x >> 16) & 0xff;
+	}
+
+	void write_32(std::vector<uint8_t>::iterator &v, uint32_t x) {
+		*v++ = x & 0xff;
+		*v++ = (x >> 8) & 0xff;
+		*v++ = (x >> 16) & 0xff;
+		*v++ = (x >> 24) & 0xff;
+	}
+
+	void write_string_15(std::vector<uint8_t>::iterator &v, const std::string &s) {
+		int i;
+		int l = std::min(15, (int)s.length());
+		for (i = 0; i < l; ++i) *v++ = toupper(s[i]);
+		for(; i < 15; ++i) *v++ = 0;
+	}
+
+
 
 
 	unsigned hex(uint8_t c) {
@@ -676,9 +844,13 @@ namespace {
 		unsigned i = 0;
 		struct timespec dates[2];
 
-		if (fi.has_fi && fi.storage_type != 0x0d) {
-			ok = setxattr(path.c_str(), XATTR_FINDERINFO_NAME, fi.finder_info, 32, 0, 0);
-			if (ok < 0) return map_errno(errno);
+		if (fi.has_fi) {
+			struct stat st;
+			ok = stat(path.c_str(), &st);
+			if (ok == 0 && S_ISREG(st.st_mode)) {
+				ok = setxattr(path.c_str(), XATTR_FINDERINFO_NAME, fi.finder_info, 32, 0, 0);
+				if (ok < 0) return map_errno(errno);
+			}
 		}
 
 		memset(&list, 0, sizeof(list));
@@ -705,83 +877,131 @@ namespace {
 	}
 
 
-	/* time to prodos 16 date/time */
-	[[maybe_unused]] uint32_t time_to_prodos(time_t t) {
+	std::vector<uint8_t> read_mli_directory(const std::string &path, const std::pair<dev_t, ino_t>& host_folder_id, unsigned &terr) {
 
-		uint32_t rv = 0;
-		if (time == 0) return rv;
+		// synthesize some fake prodos directory entries.
+		// blocks consist of forward/backward pointers, a directory header entry (first block only),
+		// and file entries
 
-		struct tm *tm = localtime(&t);
 
-		rv |= (tm->tm_year % 100) << 9;
-		rv |= (tm->tm_mon + 1) << 5;
-		rv |= tm->tm_mday;
+		const unsigned entries_per_block = 0x0d;
+		const unsigned entry_length = 0x27;
 
-		rv |= tm->tm_hour << 24;
-		rv |= tm->tm_min << 16;
+		std::vector<uint8_t> rv;
+
+		std::vector<std::string> dirs = read_directory(path, terr, true);
+
+		const unsigned blocks = (1 + dirs.size() + entries_per_block - 1) / entries_per_block;
+		rv.resize(blocks * 512);
+
+		file_info fi {};
+
+		auto iter = rv.begin();
+		terr = get_file_info(path, fi, host_folder_id);
+		if (terr) {
+			rv.clear();
+			return rv;
+		}
+
+		bool root = fi.storage_type == 0x0f;
+		std::string dirname = basename(path);
+		if (dirname.empty()) dirname = 'HOST';
+		if (dirname.length() > 15) dirname.resize(15);
+		size_t len = dirname.length();
+
+		// prev/next ptrs.
+		write_16(iter, 0);
+		write_16(iter, 0);
+
+		if (root) {
+			write_8(iter, 0xf0 | len);
+		} else {
+			write_8(iter, 0xd0 | len);
+		}
+		write_string_15(iter, dirname);
+
+		if (root) {
+			// reserved
+			write_16(iter, 0);
+
+			// last modified
+			write_32(iter, time_to_prodos(fi.modified_date));
+
+			// lowercase bits
+			write_16(iter, lowercase_bits(dirname));
+		} else {
+			write_8(iter, 0x75); // password enabled
+			iter += 7; // password
+		}
+
+		// creation date
+		write_32(iter, time_to_prodos(fi.create_date));
+
+		write_8(iter, 0); // version
+		write_8(iter, 0); // min version
+		write_8(iter, fi.access);
+		write_8(iter, entry_length);
+		write_8(iter, entries_per_block);
+
+		// file counter (filled in later)
+		write_16(iter, 0);
+
+		// bitmap ptr / total blocks / parent_pointer / parent entry info
+		write_16(iter, 0);
+		write_16(iter, 0);
+
+		unsigned count = 1;
+
+		// now synthesize ....
+		for (auto &leaf : dirs) {
+
+			if (leaf.length() > 15) continue;
+
+			std::string p = path + "/" + leaf;
+
+			unsigned xerr = get_file_info(p, fi, host_folder_id);
+			if (xerr) continue; //?
+
+
+			if ((count % entries_per_block) == 0) {
+
+				// move to the next block.
+				auto fudge = 0x200 - 4 - (entries_per_block * entry_length);
+				iter += fudge;
+
+				// prev/next ptr
+				write_16(iter, 0);
+				write_16(iter, 0);
+			}
+
+			len = leaf.length();
+			if (fi.storage_type == extendedFile)
+				fi.storage_type = sapling;
+			write_8(iter, (fi.storage_type << 4) | len);
+			write_string_15(iter, leaf);
+			write_8(iter, fi.file_type);
+			write_16(iter, 0); // key pointer
+			write_16(iter, fi.blocks);
+			write_24(iter, fi.eof);
+			write_32(iter, time_to_prodos(fi.create_date));
+			write_16(iter, lowercase_bits(leaf));
+			write_8(iter, fi.access);
+			write_16(iter, fi.aux_type);
+			write_32(iter, time_to_prodos(fi.modified_date));
+			write_16(iter, 0); // header ptr.
+
+			++count;
+		}
+		--count; // don't include header
+		// update the count
+		rv[4 + 0x21] = count & 0xff;
+		rv[4 + 0x22] = (count >> 8) & 0xff;
+
 		return rv;
 	}
 
-	time_t prodos_to_time(uint32_t t) {
-
-		if (!t) return 0;
-
-		struct tm tm{};
-
-		tm.tm_year = (t >> 9) & 0x7f;
-		tm.tm_mon = ((t >> 5) & 0x0f) - 1;
-		tm.tm_mday = (t >> 0) & 0x1f;
-
-		tm.tm_hour = (t >> 24) & 0x1f;
-		tm.tm_min = (t >> 16) & 0x3f;
-		tm.tm_sec = 0;
-
-		tm.tm_isdst = -1;
-
-		// 00 - 39 => 2000-2039
-		// 40 - 99 => 1940-1999
-		if (tm.tm_year < 40) tm.tm_year += 100;
-
-		return mktime(&tm);
-	}
-
-	[[maybe_unused]] time_t hextime_to_time(uint64_t t) {
-
-		if (!t) return 0;
-		struct tm tm{};
-
-		tm.tm_sec = t & 0xff; t >>= 8;
-		tm.tm_min = t & 0xff; t >>= 8;
-		tm.tm_hour = t & 0xff; t >>= 8;
-		tm.tm_year = t & 0xff; t >>= 8;
-		tm.tm_mday = (t & 0xff) + 1; t >>= 8;
-		tm.tm_mon = t & 0xff;
-		tm.tm_isdst = -1;
-
-		return mktime(&tm);
-	}
 
 
-	/* time to gs/os date/time */
-	uint64_t time_to_hextime(time_t t) {
-		uint64_t rv = 0;
-
-		if (time == 0) return rv;
-		struct tm *tm = localtime(&t);
-		if (tm->tm_sec == 60) tm->tm_sec = 59;       /* leap second */
-
-		rv = (rv << 8) | (tm->tm_wday + 1);
-		rv = (rv << 8) | 0;
-		rv = (rv << 8) | tm->tm_mon;
-		rv = (rv << 8) | (tm->tm_mday - 1);
-		rv = (rv << 8) | tm->tm_year;
-		rv = (rv << 8) | tm->tm_hour;
-		rv = (rv << 8) | tm->tm_min;
-		rv = (rv << 8) | tm->tm_sec;
-
-
-		return rv;
-	}
 
 	void translate_in(std::vector<uint8_t> &data, unsigned tr) {
 		if (tr == translate_crlf) {
@@ -820,7 +1040,9 @@ namespace {
 		case SET_FILE_INFO: return 7;
 		case GET_FILE_INFO: return 10;
 		case ONLINE: return 2;
+		case ONLINE | 0x20: return 2;
 		case SET_PREFIX: return 1;
+		case SET_PREFIX | 0x20 : return 1;
 		case GET_PREFIX: return 1;
 		case OPEN: return 3;
 		case NEWLINE: return 3;
@@ -834,6 +1056,8 @@ namespace {
 		case GET_EOF: return 2;
 		case SET_BUF: return 2;
 		case GET_BUF: return 2;
+
+		case HOST_INIT: return 4;
 
 		default: return 0;
 		}
@@ -1061,12 +1285,13 @@ void ample_host_device::wdm_w(offs_t offset, uint8_t data)
 	switch(data) {
 	case 0xa0: host_print(); break;
 	case 0xa1: host_hexdump(); break;
+	case 0xfc: host_mli(); break;
 	case 0xff: host_fst(); break;
 	}
 
 }
 
-std::string ample_host_device::read_string(uint32_t address, unsigned type) {
+std::string ample_host_device::read_string(uint32_t address, unsigned type, bool sevenbit) {
 
 	std::string rv;
 	unsigned length = 0;
@@ -1078,6 +1303,7 @@ std::string ample_host_device::read_string(uint32_t address, unsigned type) {
 		for(;;) {
 			unsigned char c = m_space->read_byte(address++);
 			if (!c) break;
+			if (sevenbit && c == 0) break;
 			rv.push_back(c);
 		}
 		break;
@@ -1095,6 +1321,7 @@ std::string ample_host_device::read_string(uint32_t address, unsigned type) {
 		for (unsigned i = 0; i < length; ++i)
 			rv.push_back(m_space->read_byte(address++));
 	}
+	if (sevenbit) for (auto &c : rv) c &= 0x7f;
 	return rv;
 }
 
@@ -1179,25 +1406,32 @@ unsigned ample_host_device::write_option_list(uint32_t address, unsigned fstID, 
 }
 
 
-unsigned ample_host_device::fst_startup()
+bool ample_host_device::common_start()
 {
-	LOGMASKED(LOG_FST, "fst_startup()\n");
-	/* called during the initial boot into GS/OS */
-
 	struct stat st;
 
 	std::string tmp = machine().options().share_directory();
-	if (tmp.empty()) return invalidFSTop;
+	if (tmp.empty()) return false;
 
-	if (::stat(tmp.c_str(), &st) < 0) return invalidFSTop;
-	if (!S_ISDIR(st.st_mode)) return invalidFSTop;
+	if (::stat(tmp.c_str(), &st) < 0) return false;
+	if (!S_ISDIR(st.st_mode)) return false;
 
 	if (tmp.back() != '/') tmp.push_back('/');
 
 	m_host_directory = std::move(tmp);
 	m_host_directory_id = std::make_pair(st.st_dev, st.st_ino);
 
-	return 0;
+	return true;
+}
+
+
+
+unsigned ample_host_device::fst_startup()
+{
+	LOGMASKED(LOG_FST, "fst_startup()\n");
+	/* called during the initial boot into GS/OS */
+
+	return common_start() ? 0 : invalidFSTop;
 }
 
 unsigned ample_host_device::fst_shutdown()
@@ -1205,13 +1439,6 @@ unsigned ample_host_device::fst_shutdown()
 
 	LOGMASKED(LOG_FST, "fst_shutdown()\n");
 	/* called when switching to p8 */
-
-
-#if 0
-	m_host_directory.clear();
-	m_host_ino = 0;
-	m_host_dev = 0;
-#endif
 
 	/* close open files */
 	for (auto &f : m_files) {
@@ -1499,7 +1726,6 @@ ample_host_device::file_entry *ample_host_device::mli_get_file_entry(unsigned co
 
 unsigned ample_host_device::fst_close(unsigned klass, file_entry &e)
 {
-
 	LOGMASKED(LOG_FST, "fst_close(%s)\n", e.path.c_str());
 
 	e.close();
@@ -1510,7 +1736,6 @@ unsigned ample_host_device::fst_close(unsigned klass, file_entry &e)
 
 unsigned ample_host_device::fst_flush(unsigned klass, file_entry &e)
 {
-
 	LOGMASKED(LOG_FST, "fst_flush(%s)\n", e.path.c_str());
 
 	if (e.type == file_directory) return 0;
@@ -1524,7 +1749,6 @@ unsigned ample_host_device::fst_flush(unsigned klass, file_entry &e)
 
 unsigned ample_host_device::fst_read(unsigned klass, file_entry &e)
 {
-
 	LOGMASKED(LOG_FST, "fst_read(%s)\n", e.path.c_str());
 
 	unsigned dp = m_maincpu->g65816_get_reg(g65816_device::G65816_D);
@@ -1732,7 +1956,6 @@ unsigned ample_host_device::fst_set_mark(unsigned klass, file_entry &e)
 unsigned ample_host_device::fst_volume(unsigned klass) {
 
 	LOGMASKED(LOG_FST, "fst_volume()\n");
-
 
 	unsigned dp = m_maincpu->g65816_get_reg(g65816_device::G65816_D);
 	uint32_t pb = m_space->read_dword(dp + dp_param_blk_ptr) & 0x00ffffff;
@@ -1952,9 +2175,11 @@ unsigned ample_host_device::fst_change_path(unsigned klass, const std::string &p
 
 
 int ample_host_device::mli_rename(unsigned dcb, const std::string &path1, const std::string &path2) {
-	// n.b. p8 rename is only allowed within the same directory.
+	LOGMASKED(LOG_MLI, "mli_rename(%s, %s)\n", path1.c_str(), path2.c_str());
 
 	if (BIT(m_sysconfig->read(), BIT_HOST_READ_ONLY)) return drvrWrtProt;
+
+	// n.b. p8 rename is only allowed within the same directory.
 
 	struct stat st;
 	int ok;
@@ -1976,26 +2201,32 @@ int ample_host_device::mli_rename(unsigned dcb, const std::string &path1, const 
 
 
 
+// m_mli_prefix includes /host/ and a trailing slash.
+// returned value excludes leading/trailing slash
 
 /* returns -1 (volNotFound?) if not a /host/ path */
 int ample_host_device::mli_expand_path(std::string &s) {
 
-	bool absolute = false;
+	// bool absolute = false;
+
+	if (s.empty()) return -1;
+	if (dotdot(s)) return badPathSyntax;
+
 	if (s[0] == '/') {
 		if (s.length() < 5 || core_strnicmp(s.c_str(), "/host", 5)) 
 			return -1;
 		if (s.length() > 5 && s[5] != '/')
 			return -1;
-		absolute = true;
+		// absolute = true;
+		s = s.length() > 6 ? s.substr(6) : std::string("");
 	} else {
 		if (m_mli_prefix.empty()) return -1;
-		absolute = false;
+		// absolute = false;
+		s = m_mli_prefix.substr(6) + s;
 	}
 
-	if (dotdot(s)) return badPathSyntax;
+	while (!s.empty() && s.back() == '/') s.pop_back();
 
-	if (absolute) s = s.substr(6);
-	else s = m_mli_prefix + s;
 	return 0;
 }
 
@@ -2024,7 +2255,25 @@ unsigned ample_host_device::fst_destroy(unsigned klass, const std::string &path)
 }
 
 int ample_host_device::mli_destroy(unsigned dcb, const std::string &path) {
-	return -1;
+	LOGMASKED(LOG_MLI, "mli_destroy(%s)\n", path.c_str());
+
+	if (BIT(m_sysconfig->read(), BIT_HOST_READ_ONLY)) return drvrWrtProt;
+
+	struct stat st;
+
+	if (::stat(path.c_str(), &st) < 0) {
+		return map_errno(errno, path);
+	}
+
+	// can't delete volume root.
+	if (std::make_pair(st.st_dev, st.st_ino) == m_host_directory_id)
+		return badStoreType;
+
+
+	int ok = S_ISDIR(st.st_mode) ? ::rmdir(path.c_str()) : ::unlink(path.c_str());
+
+	if (ok < 0) return map_errno(errno, path);
+	return 0;
 }
 
 unsigned ample_host_device::fst_open(unsigned klass, const std::string &path) {
@@ -2168,7 +2417,65 @@ unsigned ample_host_device::fst_open(unsigned klass, const std::string &path) {
 }
 
 int ample_host_device::mli_open(unsigned dcb, const std::string &path) {
-	return -1;
+	LOGMASKED(LOG_MLI, "mli_open(%s)\n", path.c_str());
+
+
+	struct file_info fi;
+
+	unsigned rv = get_file_info(path, fi, m_host_directory_id);
+	if (rv) return rv;
+
+	file_entry e;
+	e.type = file_regular;
+	e.path = path;
+	e.buffer = m_space->read_word(dcb + 3);
+
+	unsigned access = readEnableAllowWrite;
+	unsigned terr = 0;
+	if (BIT(m_sysconfig->read(), BIT_HOST_READ_ONLY)) {
+		access = readEnable;
+	}
+
+	if (fi.storage_type == 0x0d || fi.storage_type == 0x0f) {
+		e.access = readEnable;
+		e.type = file_directory;
+
+		unsigned terr = 0;
+		e.dir_file = read_mli_directory(path, m_host_directory_id, terr);
+		if (terr) return terr;
+	} else {
+
+		int fd = open_data_fork(path, access, terr);
+		if (fd < 0) return terr;
+
+		e.access = access;
+		e.fd = fd;
+
+		if (BIT(m_sysconfig->read(), BIT_HOST_TRANSLATE_TEXT)) {
+			if (fi.file_type == 0x04 || fi.file_type == 0xb0)
+				e.translate = translate_crlf;
+		}
+		if (fi.file_type == 0x04 && BIT(m_sysconfig->read(), BIT_HOST_TRANSLATE_MERLIN)) {
+			size_t n = path.length();
+			if (n >= 3 && toupper(path[n-1]) == 'S' && path[n-2] == '.')
+				e.translate = translate_merlin; 
+		}
+	}
+
+	unsigned cookie = 0;
+	auto iter = std::find_if(m_files.begin(), m_files.end(), [](const auto &e){
+		return !e;
+	});
+	if (iter == m_files.end()) {
+		m_files.emplace_back(std::move(e));
+		cookie = m_files.size();
+	} else {
+		*iter = std::move(e);
+		cookie = std::distance(m_files.begin(), iter) + 1;
+	}
+
+	m_space->write_byte(dcb + 5, cookie + 0x80);
+	return 0;
 }
 
 
@@ -2225,7 +2532,24 @@ unsigned ample_host_device::fst_get_file_info(unsigned klass, const std::string 
 }
 
 int ample_host_device::mli_get_file_info(unsigned dcb, const std::string &path) {
-	return -1;
+	LOGMASKED(LOG_MLI, "mli_get_file_info(%s)\n", path.c_str());
+
+	struct file_info fi{};
+	int rv = 0;
+
+	rv = get_file_info(path, fi, m_host_directory_id);
+	if (rv) return rv;
+
+
+	m_space->write_byte(dcb + 3, fi.access);
+	m_space->write_byte(dcb + 4, fi.file_type);
+	m_space->write_word(dcb + 5, fi.aux_type);
+	m_space->write_byte(dcb + 7, fi.storage_type);
+	m_space->write_word(dcb + 8, fi.blocks);
+	m_space->write_dword(dcb + 10, time_to_prodos(fi.modified_date));
+	m_space->write_dword(dcb + 14, time_to_prodos(fi.create_date));
+
+	return 0;
 }
 
 
@@ -2360,7 +2684,51 @@ unsigned ample_host_device::fst_create(unsigned klass, const std::string &path) 
 }
 
 int ample_host_device::mli_create(unsigned dcb, const std::string &path) {
-	return -1;
+	LOGMASKED(LOG_MLI, "mli_create(%s)\n", path.c_str());
+
+	if (BIT(m_sysconfig->read(), BIT_HOST_READ_ONLY)) return drvrWrtProt;
+
+	struct file_info fi {};
+
+	fi.access = m_space->read_byte(dcb + 3);
+	fi.file_type = m_space->read_byte(dcb + 4);
+	fi.aux_type = m_space->read_word(dcb + 5);
+	fi.storage_type = m_space->read_byte(dcb + 7);
+	fi.create_date = prodos_to_time(m_space->read_dword(dcb + 8));
+
+	file_type_to_finder_info(fi.finder_info, fi.file_type, fi.aux_type);
+	fi.has_fi = 1;
+
+	switch (fi.storage_type) {
+	case 0:
+		fi.storage_type = fi.file_type == 0x0f ? 0x0d : 0x01;
+		break;
+	case 0x01:
+	case 0x02:
+	case 0x03:
+	case 0x0d:
+		break;
+	default:
+		return badStoreType;
+	}
+
+	if (fi.storage_type == 0x0d) {
+		int ok = ::mkdir(path.c_str(), 0777);
+		if (ok < 0)
+			return map_errno(errno, path);
+
+		return 0;
+	}
+
+	int ok = ::open(path.c_str(), O_CREAT | O_EXCL | O_WRONLY | O_NONBLOCK, 0666);
+	if (ok < 0) return map_errno(errno, path);
+
+
+	// set auxtype, filetype, etc.
+	set_file_info(path, fi);
+	::close(ok);
+
+	return 0;
 }
 
 unsigned ample_host_device::fst_set_file_info(unsigned klass, const std::string &path) {
@@ -2426,13 +2794,26 @@ unsigned ample_host_device::fst_set_file_info(unsigned klass, const std::string 
 }
 
 int ample_host_device::mli_set_file_info(unsigned dcb, const std::string &path) {
-	return -1;
+	LOGMASKED(LOG_MLI, "mli_set_file_info(%s)\n", path.c_str());
+
+	if (BIT(m_sysconfig->read(), BIT_HOST_READ_ONLY)) return drvrWrtProt;
+
+	struct file_info fi{};
+
+	fi.access = m_space->read_byte(dcb + 3);
+	fi.file_type = m_space->read_byte(dcb + 4);
+	fi.aux_type = m_space->read_word(dcb + 5);
+	fi.modified_date = prodos_to_time(m_space->read_dword(dcb + 10));
+
+	file_type_to_finder_info(fi.finder_info, fi.file_type, fi.aux_type);
+	fi.has_fi = 1;
+
+	return set_file_info(path, fi);
 }
 
 
 
 unsigned ample_host_device::fst_format(unsigned klass) {
-
 	LOGMASKED(LOG_FST, "fst_format()\n");
 
 	return notBlockDev;
@@ -2453,33 +2834,30 @@ unsigned ample_host_device::fst_clear_backup(unsigned klass, const std::string &
 
 #pragma mark - mli
 
-enum {
-	path_absolute_host,
-	path_absolute,
-	path_relative,
-};
-int classify_path(const std::string &s) {
-	if (s[0] != '/') return path_relative;
-	if (s.length() < 5) return path_absolute;
-	if (core_strnicmp("/host", s.c_str(), 5)) return path_absolute;
-	if (s.length() == 5 || s[5] == '/') return path_absolute_host;
-	return path_absolute;
-}
 
 void ample_host_device::host_mli() {
 
 	unsigned s = m_maincpu->g65816_get_reg(g65816_device::G65816_S);
 	// unsigned p = m_maincpu->g65816_get_reg(g65816_device::G65816_P);
-	unsigned rts = m_space->read_word(0x0100 | s + 1);
+	unsigned rts = m_space->read_word(0x0100 | s + 1) + 1;
 	unsigned call = m_space->read_byte(rts);
 	unsigned dcb = m_space->read_word(rts + 1);
 
 	unsigned pcount = m_space->read_byte(dcb);
+
+	LOGMASKED(LOG_MLI, "host_mli(%02x, %04x)\n", call, dcb);
+
+
+	if (m_mli_vector == 0 && call != HOST_INIT) {
+		return;
+	}
+
 	if (pcount != mli_expected_pcount(call)) {
 		/* invalidPcount but let prodos deal with it */
 		m_maincpu->g65816_set_reg(g65816_device::G65816_PC, m_mli_vector);
 		return;
 	}
+
 
 	unsigned pp;
 	unsigned refNum = 0;
@@ -2497,17 +2875,17 @@ void ample_host_device::host_mli() {
 	case OPEN:
 		/* path-based.... */
 		pp = m_space->read_word(dcb + 1);
-		path1 = read_string(pp, 1);
+		path1 = read_string(pp, 1, true);
 		err = mli_expand_path(path1);
 		break;
 	case RENAME:
 		/* path-based.... */
 		pp = m_space->read_word(dcb + 1);
-		path1 = read_string(pp, 1);
+		path1 = read_string(pp, 1, true);
 		err = mli_expand_path(path1);
 		if (err) break;
-		pp = m_space->read_word(dcb + 1);
-		path2 = read_string(pp, 3);
+		pp = m_space->read_word(dcb + 3);
+		path2 = read_string(pp, 1, true);
 		err = mli_expand_path(path2);
 		break;
 
@@ -2543,6 +2921,11 @@ void ample_host_device::host_mli() {
 	switch (call) {
 	default:
 		err = -1;
+		break;
+
+
+	case HOST_INIT:
+		err = mli_start(dcb);
 		break;
 
 	case OPEN:
@@ -2626,6 +3009,10 @@ void ample_host_device::host_mli() {
 		err = mli_set_prefix(dcb);
 		break;
 
+	case GET_PREFIX:
+		err = mli_get_prefix(dcb);
+		break;
+
 	case ONLINE | 0x20:
 		tail = true;
 		err = mli_online_tail(dcb);
@@ -2643,6 +3030,7 @@ void ample_host_device::host_mli() {
 			m_space->write_byte(0x80 + i, m_mli_zp_save[i]);
 		}
 		m_maincpu->g65816_set_reg(g65816_device::G65816_PC, m_mli_rts + 3);
+		m_maincpu->g65816_set_reg(g65816_device::G65816_S, s + 2); // pop rts address.
 		return;
 	}
 
@@ -2674,9 +3062,11 @@ void ample_host_device::host_mli() {
 		m_space->write_word(0x80 + 4, dcb);
 
 		m_space->write_byte(0x80 + 6, JSR);
-		m_space->write_word(0x80 + 7, 0xbf00);
+		m_space->write_word(0x80 + 7, MLI_ENTRY);
 		m_space->write_byte(0x80 + 9, call | 0x20);
 		m_space->write_word(0x80 + 10, dcb);
+		m_space->write_byte(0x80 + 12, JMP);
+		m_space->write_word(0x80 + 12, rts + 4);
 
 		/* replace the rts address */
 		m_space->write_word(0x0100 | s + 1, 0x0082);
@@ -2684,46 +3074,88 @@ void ample_host_device::host_mli() {
 		return;		
 	}
 
+	if (err == 0) {
+		switch(call) {
+		case CREATE:
+		case DESTROY:
+		case RENAME:
+		case SET_FILE_INFO:
+		case GET_FILE_INFO:
+		case ONLINE:
+		case SET_PREFIX:
+		case GET_PREFIX:
+		case OPEN:
+		case NEWLINE:
+		case READ:
+		case WRITE:
+		case CLOSE:
+		case FLUSH:
+		case SET_MARK:
+		case GET_MARK:
+		case SET_EOF:
+		case GET_EOF:
+		case SET_BUF:
+		case GET_BUF:
+			// last accessed device.
+			m_space->write_byte(MLI_DEVNUM, m_mli_unit);
+			break;
+		}
+	}
 
 	if (err >= 0) {
 		/* we handled it */
 		m_maincpu->g65816_set_reg(g65816_device::G65816_PC, rts + 3);
+		m_maincpu->g65816_set_reg(g65816_device::G65816_S, s + 2); // pop rts address.
 		mli_return(err);
 	}
 }
 
-#if 0
-void ample_host_device::host_mli_tail() {
-	unsigned p = m_maincpu->g65816_get_reg(g65816_device::G65816_P);
-	if ((p & 0x01) == 0) {
-		/* carry clear */
-		switch(m_mli_call) {
-		case SET_PREFIX:
-			m_mli_prefix.clear();
-			break;
-		case ONLINE:
-			mli_online_tail(m_mli_dcb);
-		}
-	}
 
-	for (unsigned i = 0; i < 16; ++i) {
-		m_space->write_byte(0x80 + i, m_mli_zp_save[i]);
+int ample_host_device::mli_start(unsigned dcb) {
+	LOGMASKED(LOG_MLI, "mli_start()\n");
+
+	unsigned version = m_space->read_byte(dcb + 1);
+	unsigned vector = m_space->read_word(dcb + 2);
+	// unsigned patch_address = m_space->read_word(dcb + 4);
+	unsigned unit = m_space->read_byte(dcb + 6);
+
+	LOGMASKED(LOG_MLI, "mli_start(version = %02x, address=%04x, unit=%02x)\n", version, vector, unit);
+
+
+	// gsplus uses version 1.
+	// ample mame uses version 2.
+
+	if (version != 2) return badSystemCall;
+
+	// $bf00 looks like jmp real_address
+	// we replace that with a wdm xx nop
+
+	if (common_start() && vector != 0) {
+		m_mli_prefix.clear();
+		m_mli_vector = m_space->read_word(dcb + 2);
+		m_mli_unit = m_space->read_byte(dcb + 6);
+		return 0;
 	}
-	m_maincpu->g65816_set_reg(g65816_device::G65816_PC, m_mli_rts);
+	return badSystemCall;
 }
-#endif
+
 
 int ample_host_device::mli_quit(unsigned dcb) {
+	LOGMASKED(LOG_MLI, "mli_quit()\n");
+
 	m_files.clear();
 	return -1;
 }
 
 
 int ample_host_device::mli_rw_block(unsigned dcb) {
+	LOGMASKED(LOG_MLI, "mli_rw_block()\n");
+
 	return -1;
 }
 
 int ample_host_device::mli_newline(unsigned dcb, file_entry &e) {
+	LOGMASKED(LOG_MLI, "mli_newline()\n");
 
 	e.newline_mask = m_space->read_byte(dcb + 2);
 	e.newline_char = m_space->read_byte(dcb + 3);
@@ -2732,6 +3164,8 @@ int ample_host_device::mli_newline(unsigned dcb, file_entry &e) {
 
 
 int ample_host_device::mli_close(unsigned dcb) {
+	LOGMASKED(LOG_MLI, "mli_close()\n");
+
 	unsigned level = m_space->read_byte(MLI_LEVEL);
 	for (auto &e : m_files) {
 		if (e && e.level < level) {
@@ -2743,6 +3177,8 @@ int ample_host_device::mli_close(unsigned dcb) {
 }
 
 int ample_host_device::mli_close(unsigned dcb, file_entry &e) {
+	LOGMASKED(LOG_MLI, "mli_close(%s)\n", e.path.c_str());
+
 	e.close();
 	if (&m_files.back() == &e) m_files.pop_back();
 	return 0;
@@ -2750,6 +3186,8 @@ int ample_host_device::mli_close(unsigned dcb, file_entry &e) {
 
 
 int ample_host_device::mli_flush(unsigned dcb) {
+	LOGMASKED(LOG_MLI, "mli_flush()\n");
+
 	unsigned level = m_space->read_byte(MLI_LEVEL);
 	for (auto &e : m_files) {
 		if (e && e.level < level && e.fd >= 0) {
@@ -2761,6 +3199,8 @@ int ample_host_device::mli_flush(unsigned dcb) {
 
 
 int ample_host_device::mli_flush(unsigned dcb, file_entry &e) {
+	LOGMASKED(LOG_MLI, "mli_flush(%s)\n", e.path.c_str());
+
 	if (e.fd >= 0) {
 		int ok = ::fsync(e);
 		if (ok < 0) return map_errno(ok);
@@ -2769,12 +3209,14 @@ int ample_host_device::mli_flush(unsigned dcb, file_entry &e) {
 }
 
 int ample_host_device::mli_read(unsigned dcb, file_entry &e) {
+	LOGMASKED(LOG_MLI, "mli_read(%s)\n", e.path.c_str());
 
 	// todo -- does this work with aux memory swapping???
 	unsigned data_buffer = m_space->read_word(dcb + 2);
 	unsigned request_count = m_space->read_word(dcb + 4);
 	unsigned transfer_count = 0;
 	m_space->write_word(dcb + 6, 0); // pre-zero transfer count.
+	if (request_count == 0) return 0;
 
 	std::vector<uint8_t> buffer(request_count);
 	if (e.type == file_directory) {
@@ -2782,16 +3224,19 @@ int ample_host_device::mli_read(unsigned dcb, file_entry &e) {
 			// ???
 			transfer_count = 0;
 		} else {
+
+			transfer_count = std::min(request_count, (unsigned)(e.dir_file.size() - e.offset));
+
 			auto iter = e.dir_file.begin() + e.offset;
-			auto end = e.dir_file.end();
+			auto end = iter + transfer_count;
 			std::copy(iter, end, buffer.begin());
-			transfer_count = std::distance(iter, end);
 		}
 	} else {
 		int ok = ::pread(e.fd, buffer.data(), request_count, e.offset);
 		if (ok < 0) return map_errno(errno);
 		transfer_count = ok;
 	}
+	if (transfer_count == 0) return eofEncountered;
 
 	translate_in(buffer, e.translate);
 
@@ -2815,6 +3260,7 @@ int ample_host_device::mli_read(unsigned dcb, file_entry &e) {
 }
 
 int ample_host_device::mli_write(unsigned dcb, file_entry &e) {
+	LOGMASKED(LOG_MLI, "mli_write(%s)\n", e.path.c_str());
 
 	//if (BIT(m_sysconfig->read(), BIT_HOST_READ_ONLY)) return drvrWrtProt;
 
@@ -2842,6 +3288,8 @@ int ample_host_device::mli_write(unsigned dcb, file_entry &e) {
 }
 
 int ample_host_device::mli_get_eof(unsigned dcb, file_entry &e) {
+	LOGMASKED(LOG_MLI, "mli_get_eof(%s)\n", e.path.c_str());
+
 	ssize_t eof = 0;
 	switch(e.type) {
 	case file_directory:
@@ -2862,8 +3310,9 @@ int ample_host_device::mli_get_eof(unsigned dcb, file_entry &e) {
 }
 
 int ample_host_device::mli_set_eof(unsigned dcb, file_entry &e) {
+	LOGMASKED(LOG_MLI, "mli_set_eof(%s)\n", e.path.c_str());
 
-	if (BIT(m_sysconfig->read(), BIT_HOST_READ_ONLY)) return drvrWrtProt;
+	// if (BIT(m_sysconfig->read(), BIT_HOST_READ_ONLY)) return drvrWrtProt;
 
 	unsigned eof = m_space->read_dword(dcb + 2) & 0x00ffffff;
 
@@ -2886,6 +3335,7 @@ int ample_host_device::mli_set_eof(unsigned dcb, file_entry &e) {
 
 
 int ample_host_device::mli_get_mark(unsigned dcb, file_entry &e) {
+	LOGMASKED(LOG_MLI, "mli_get_mark(%s)\n", e.path.c_str());
 
 	// 24-bit write.
 	m_space->write_word(dcb + 2, e.offset);
@@ -2896,6 +3346,7 @@ int ample_host_device::mli_get_mark(unsigned dcb, file_entry &e) {
 
 
 int ample_host_device::mli_set_mark(unsigned dcb, file_entry &e) {
+	LOGMASKED(LOG_MLI, "mli_set_mark(%s)\n", e.path.c_str());
 
 	// TODO - positionError if offset > eof
 	e.offset = m_space->read_dword(dcb + 2) & 0x00ffffff;
@@ -2904,12 +3355,14 @@ int ample_host_device::mli_set_mark(unsigned dcb, file_entry &e) {
 
 
 int ample_host_device::mli_get_buf(unsigned dcb, file_entry &e) {
+	LOGMASKED(LOG_MLI, "mli_get_buf(%s)\n", e.path.c_str());
 
 	m_space->write_word(dcb + 2, e.buffer);
 	return 0;
 }
 
 int ample_host_device::mli_set_buf(unsigned dcb, file_entry &e) {
+	LOGMASKED(LOG_MLI, "mli_set_buf(%s)\n", e.path.c_str());
 
 	unsigned buffer = m_space->read_word(dcb + 2);
 	if (buffer & 0xff) return badBufferAddress;
@@ -2920,10 +3373,13 @@ int ample_host_device::mli_set_buf(unsigned dcb, file_entry &e) {
 
 
 int ample_host_device::mli_online(unsigned dcb) {
+	LOGMASKED(LOG_MLI, "mli_online()\n");
 
 	/* if this is specific to our unit, handle it. if it is for all units, set up the tail patch */
 	unsigned unit = m_space->read_byte(dcb + 1);
 	unsigned buffer_address = m_space->read_word(dcb + 2);
+
+	LOGMASKED(LOG_MLI, "  mli_online(%02x, %04x)\n", unit, buffer_address);
 
 	if (unit == m_mli_unit) {
 
@@ -2938,86 +3394,80 @@ int ample_host_device::mli_online(unsigned dcb) {
 	}
 
 	return unit == 0 ? -2 : -1;
-
-#if 0
-	if (unit == 0) {
-
-		unsigned s = m_maincpu->g65816_get_reg(g65816_device::G65816_S);
-		unsigned rts = m_space->read_word(0x0100 + s + 1) + 4;
-
-		/* set up the tail call */
-		for (unsigned i = 0; i < 16; ++i) {
-			m_mli_zp_save[i] = m_space->read_byte(0x80 + i);
-		}
-
-		unsigned i = 0x80;
-		// JSR original_mli_vector
-		m_space->write_byte(i, JSR); i += 1;
-		m_space->write_word(i, m_mli_vector); i += 2;
-		m_space->write_byte(i, 0xc5); i += 1;
-		m_space->write_word(i, dcb); i += 2;
-
-		m_space->write_byte(i, JSR); i += 1;
-		m_space->write_word(i, 0xbf00); i += 2;
-		m_space->write_byte(i, 0xc5 | 0x20); i += 1;
-		m_space->write_word(i, dcb); i += 2;
-
-		m_space->write_byte(i, JMP); i += 1;
-		m_space->write_word(i, rts+1); i += 2;
-		return -1;
-	}
-
-	else return -1;
-#endif
 }
 
 int ample_host_device::mli_online_tail(unsigned dcb) {
+	LOGMASKED(LOG_MLI, "mli_online_tail()\n");
 
 	// unsigned unit = m_space->read_byte(dcb + 1);
 	unsigned buffer_address = m_space->read_word(dcb + 2);
 
 
 	/* at this point, ProDOS has filled out the buffer.  add ourself */
-	/* TODO -- if overwriting 0, need to insert an extra 0 entry afterwards as an end of list indicator */
-
 	for (unsigned i = 0; i < 16; ++i, buffer_address += 16) {
 
 		unsigned x = m_space->read_byte(buffer_address);
 		if (x == 0 || ((x & 0xf0) == m_mli_unit)) {
 
-			m_space->write_byte(buffer_address++, m_mli_unit | 0x04);
-			m_space->write_byte(buffer_address++, 'H');
-			m_space->write_byte(buffer_address++, 'O');
-			m_space->write_byte(buffer_address++, 'S');
-			m_space->write_byte(buffer_address++, 'T');
+			m_space->write_byte(buffer_address+0, m_mli_unit | 0x04);
+			m_space->write_byte(buffer_address+1, 'H');
+			m_space->write_byte(buffer_address+2, 'O');
+			m_space->write_byte(buffer_address+3, 'S');
+			m_space->write_byte(buffer_address+4, 'T');
 
+			if (x == 0 && i < 15) {
+				// re-terminate
+				m_space->write_byte(buffer_address+16, 0x00);
+			}
 			break;
 		}
+
 	}
 	return 0;
 }
 
 
+int ample_host_device::mli_get_prefix(unsigned dcb) {
+	LOGMASKED(LOG_MLI, "mli_get_prefix()\n");
+
+	if (m_mli_prefix.empty()) return -1;
+	unsigned pp = m_space->read_word(dcb + 1);
+
+	write_string(pp, m_mli_prefix, 1);
+	fprintf(stderr, " -> %s\n", m_mli_prefix.c_str());
+	return 0;
+}
+
 int ample_host_device::mli_set_prefix(unsigned dcb) {
 
-	std::string pfx = read_string(m_space->read_word(dcb + 1), 1);
+	std::string pfx = read_string(m_space->read_word(dcb + 1), 1, true);
+
+	LOGMASKED(LOG_MLI, "mli_set_prefix(%s [%s])\n", pfx.c_str(), m_mli_prefix.c_str());
+
+
 	int ok = mli_expand_path(pfx);
+	fprintf(stderr, " -> %d, %s\n", ok, pfx.c_str());
 	if (ok < 0) return m_mli_prefix.empty() ? -1 : -2;
 
 	struct stat st;
 	std::string path = m_host_directory + pfx;
 	ok = ::stat(path.c_str(), &st);
 	if (ok < 0) return map_errno(errno, path);
-	if (!S_ISREG(st.st_mode)) return badStoreType;
+	if (!S_ISDIR(st.st_mode)) return badStoreType;
 
+	if (!pfx.empty()) pfx.push_back('/');
+	pfx = std::string("/HOST/") + pfx;
+	if (pfx.length() > 63) return badPathSyntax;
 
-	while (!pfx.empty() && pfx.back() == '/') pfx.pop_back();
-	pfx.push_back('/');
 	m_mli_prefix = std::move(pfx);
+	m_space->write_byte(MLI_PFIXPTR, 1); // 1 indicates prefix is active.
+	fprintf(stderr, " -> %s\n", m_mli_prefix.c_str());
 	return 0;
 }
 
 int ample_host_device::mli_set_prefix_tail(unsigned dcb) {
+	LOGMASKED(LOG_MLI, "mli_set_prefix_tail()\n");
+
 	unsigned acc = m_maincpu->g65816_get_reg(g65816_device::G65816_A) & 0xff;
 	if (!acc) m_mli_prefix.clear();
 	return acc;
