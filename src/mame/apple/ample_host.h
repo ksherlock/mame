@@ -32,12 +32,14 @@ protected:
 	void host_print();
 	void host_hexdump();
 
+	bool common_start();
+
 	unsigned fst_startup();
 	unsigned fst_shutdown();
 
 
 
-	std::string read_string(uint32_t address, unsigned type);
+	std::string read_string(uint32_t address, unsigned type, bool sevenbit=false);
 	unsigned write_string(uint32_t address, const std::string &s, unsigned type, bool truncate=false);
 	void write_data(uint32_t address, const std::vector<uint8_t> &data);
 	void write_data(uint32_t address, const uint8_t * data, size_t length);
@@ -74,6 +76,7 @@ protected:
 	void mli_return(unsigned acc);
 
 	/* mli */
+	int mli_start(unsigned dcb);
 	int mli_quit(unsigned dcb);
 	int mli_close(unsigned dcb);
 	int mli_flush(unsigned dcb);
