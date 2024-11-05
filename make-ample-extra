@@ -21,7 +21,7 @@ DRIVERS = apple/apple1.cpp apple/apple2.cpp apple/apple3.cpp apple/apple2e.cpp a
 	sony/news_68k.cpp sony/news_r3k.cpp sony/news_r4k.cpp \
 	sun/sun1.cpp sun/sun2.cpp sun/sun3.cpp sun/sun3x.cpp sun/sun4.cpp \
 	amiga/amiga.cpp acorn/bbc.cpp acorn/electron.cpp \
-	commodore/c64.cpp commodore/kim1.cpp commodore/pet.cpp
+	commodore/c64.cpp commodore/c128.cpp commodore/kim1.cpp commodore/pet.cpp
 
 
 SOURCES = $(subst $(space),$(comma),$(addprefix src/mame/,$(DRIVERS)))
