@@ -656,142 +656,142 @@ namespace {
 
 #define CORE_INPUT_TYPES_PADDLE \
 		CORE_INPUT_TYPES_BEGIN(paddle) \
-		INPUT_PORT_ANALOG_TYPE(   1, PLAYER1,  PADDLE,              N_p("input-name", "Paddle"),                 input_seq(MOUSECODE_X_INDEXED(0)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   2, PLAYER2,  PADDLE,              N_p("input-name", "Paddle 2"),               input_seq(MOUSECODE_X_INDEXED(1)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   3, PLAYER3,  PADDLE,              N_p("input-name", "Paddle 3"),               input_seq(MOUSECODE_X_INDEXED(2)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   4, PLAYER4,  PADDLE,              N_p("input-name", "Paddle 4"),               input_seq(MOUSECODE_X_INDEXED(3)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   5, PLAYER5,  PADDLE,              N_p("input-name", "Paddle 5"),               input_seq(MOUSECODE_X_INDEXED(4)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   6, PLAYER6,  PADDLE,              N_p("input-name", "Paddle 6"),               input_seq(MOUSECODE_X_INDEXED(5)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   7, PLAYER7,  PADDLE,              N_p("input-name", "Paddle 7"),               input_seq(MOUSECODE_X_INDEXED(6)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   8, PLAYER8,  PADDLE,              N_p("input-name", "Paddle 8"),               input_seq(MOUSECODE_X_INDEXED(7)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   9, PLAYER9,  PADDLE,              N_p("input-name", "Paddle 9"),               input_seq(MOUSECODE_X_INDEXED(8)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(  10, PLAYER10, PADDLE,              N_p("input-name", "Paddle 10"),              input_seq(MOUSECODE_X_INDEXED(9)), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   1, PLAYER1,  PADDLE,              N_p("input-name", "Paddle"),                 input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   2, PLAYER2,  PADDLE,              N_p("input-name", "Paddle 2"),               input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   3, PLAYER3,  PADDLE,              N_p("input-name", "Paddle 3"),               input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   4, PLAYER4,  PADDLE,              N_p("input-name", "Paddle 4"),               input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   5, PLAYER5,  PADDLE,              N_p("input-name", "Paddle 5"),               input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   6, PLAYER6,  PADDLE,              N_p("input-name", "Paddle 6"),               input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   7, PLAYER7,  PADDLE,              N_p("input-name", "Paddle 7"),               input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   8, PLAYER8,  PADDLE,              N_p("input-name", "Paddle 8"),               input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   9, PLAYER9,  PADDLE,              N_p("input-name", "Paddle 9"),               input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(  10, PLAYER10, PADDLE,              N_p("input-name", "Paddle 10"),              input_seq(), input_seq(), input_seq() ) \
 		CORE_INPUT_TYPES_END()
 
 #define CORE_INPUT_TYPES_PADDLE_V \
 		CORE_INPUT_TYPES_BEGIN(paddle_v) \
-		INPUT_PORT_ANALOG_TYPE(   1, PLAYER1,  PADDLE_V,            N_p("input-name", "Paddle V"),               input_seq(MOUSECODE_Y_INDEXED(0)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   2, PLAYER2,  PADDLE_V,            N_p("input-name", "Paddle V 2"),             input_seq(MOUSECODE_Y_INDEXED(1)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   3, PLAYER3,  PADDLE_V,            N_p("input-name", "Paddle V 3"),             input_seq(MOUSECODE_Y_INDEXED(2)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   4, PLAYER4,  PADDLE_V,            N_p("input-name", "Paddle V 4"),             input_seq(MOUSECODE_Y_INDEXED(3)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   5, PLAYER5,  PADDLE_V,            N_p("input-name", "Paddle V 5"),             input_seq(MOUSECODE_Y_INDEXED(4)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   6, PLAYER6,  PADDLE_V,            N_p("input-name", "Paddle V 6"),             input_seq(MOUSECODE_Y_INDEXED(5)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   7, PLAYER7,  PADDLE_V,            N_p("input-name", "Paddle V 7"),             input_seq(MOUSECODE_Y_INDEXED(6)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   8, PLAYER8,  PADDLE_V,            N_p("input-name", "Paddle V 8"),             input_seq(MOUSECODE_Y_INDEXED(7)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   9, PLAYER9,  PADDLE_V,            N_p("input-name", "Paddle V 9"),             input_seq(MOUSECODE_Y_INDEXED(8)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(  10, PLAYER10, PADDLE_V,            N_p("input-name", "Paddle V 10"),            input_seq(MOUSECODE_Y_INDEXED(9)), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   1, PLAYER1,  PADDLE_V,            N_p("input-name", "Paddle V"),               input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   2, PLAYER2,  PADDLE_V,            N_p("input-name", "Paddle V 2"),             input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   3, PLAYER3,  PADDLE_V,            N_p("input-name", "Paddle V 3"),             input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   4, PLAYER4,  PADDLE_V,            N_p("input-name", "Paddle V 4"),             input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   5, PLAYER5,  PADDLE_V,            N_p("input-name", "Paddle V 5"),             input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   6, PLAYER6,  PADDLE_V,            N_p("input-name", "Paddle V 6"),             input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   7, PLAYER7,  PADDLE_V,            N_p("input-name", "Paddle V 7"),             input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   8, PLAYER8,  PADDLE_V,            N_p("input-name", "Paddle V 8"),             input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   9, PLAYER9,  PADDLE_V,            N_p("input-name", "Paddle V 9"),             input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(  10, PLAYER10, PADDLE_V,            N_p("input-name", "Paddle V 10"),            input_seq(), input_seq(), input_seq() ) \
 		CORE_INPUT_TYPES_END()
 
 #define CORE_INPUT_TYPES_POSITIONAL \
 		CORE_INPUT_TYPES_BEGIN(positional) \
-		INPUT_PORT_ANALOG_TYPE(   1, PLAYER1,  POSITIONAL,          N_p("input-name", "Positional"),             input_seq(MOUSECODE_X_INDEXED(0)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   2, PLAYER2,  POSITIONAL,          N_p("input-name", "Positional 2"),           input_seq(MOUSECODE_X_INDEXED(1)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   3, PLAYER3,  POSITIONAL,          N_p("input-name", "Positional 3"),           input_seq(MOUSECODE_X_INDEXED(2)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   4, PLAYER4,  POSITIONAL,          N_p("input-name", "Positional 4"),           input_seq(MOUSECODE_X_INDEXED(3)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   5, PLAYER5,  POSITIONAL,          N_p("input-name", "Positional 5"),           input_seq(MOUSECODE_X_INDEXED(4)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   6, PLAYER6,  POSITIONAL,          N_p("input-name", "Positional 6"),           input_seq(MOUSECODE_X_INDEXED(5)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   7, PLAYER7,  POSITIONAL,          N_p("input-name", "Positional 7"),           input_seq(MOUSECODE_X_INDEXED(6)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   8, PLAYER8,  POSITIONAL,          N_p("input-name", "Positional 8"),           input_seq(MOUSECODE_X_INDEXED(7)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   9, PLAYER9,  POSITIONAL,          N_p("input-name", "Positional 9"),           input_seq(MOUSECODE_X_INDEXED(8)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(  10, PLAYER10, POSITIONAL,          N_p("input-name", "Positional 10"),          input_seq(MOUSECODE_X_INDEXED(9)), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   1, PLAYER1,  POSITIONAL,          N_p("input-name", "Positional"),             input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   2, PLAYER2,  POSITIONAL,          N_p("input-name", "Positional 2"),           input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   3, PLAYER3,  POSITIONAL,          N_p("input-name", "Positional 3"),           input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   4, PLAYER4,  POSITIONAL,          N_p("input-name", "Positional 4"),           input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   5, PLAYER5,  POSITIONAL,          N_p("input-name", "Positional 5"),           input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   6, PLAYER6,  POSITIONAL,          N_p("input-name", "Positional 6"),           input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   7, PLAYER7,  POSITIONAL,          N_p("input-name", "Positional 7"),           input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   8, PLAYER8,  POSITIONAL,          N_p("input-name", "Positional 8"),           input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   9, PLAYER9,  POSITIONAL,          N_p("input-name", "Positional 9"),           input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(  10, PLAYER10, POSITIONAL,          N_p("input-name", "Positional 10"),          input_seq(), input_seq(), input_seq() ) \
 		CORE_INPUT_TYPES_END()
 
 #define CORE_INPUT_TYPES_POSITIONAL_V \
 		CORE_INPUT_TYPES_BEGIN(positional_v) \
-		INPUT_PORT_ANALOG_TYPE(   1, PLAYER1,  POSITIONAL_V,        N_p("input-name", "Positional V"),           input_seq(MOUSECODE_Y_INDEXED(0)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   2, PLAYER2,  POSITIONAL_V,        N_p("input-name", "Positional V 2"),         input_seq(MOUSECODE_Y_INDEXED(1)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   3, PLAYER3,  POSITIONAL_V,        N_p("input-name", "Positional V 3"),         input_seq(MOUSECODE_Y_INDEXED(2)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   4, PLAYER4,  POSITIONAL_V,        N_p("input-name", "Positional V 4"),         input_seq(MOUSECODE_Y_INDEXED(3)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   5, PLAYER5,  POSITIONAL_V,        N_p("input-name", "Positional V 5"),         input_seq(MOUSECODE_Y_INDEXED(4)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   6, PLAYER6,  POSITIONAL_V,        N_p("input-name", "Positional V 6"),         input_seq(MOUSECODE_Y_INDEXED(5)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   7, PLAYER7,  POSITIONAL_V,        N_p("input-name", "Positional V 7"),         input_seq(MOUSECODE_Y_INDEXED(6)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   8, PLAYER8,  POSITIONAL_V,        N_p("input-name", "Positional V 8"),         input_seq(MOUSECODE_Y_INDEXED(7)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   9, PLAYER9,  POSITIONAL_V,        N_p("input-name", "Positional V 9"),         input_seq(MOUSECODE_Y_INDEXED(8)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(  10, PLAYER10, POSITIONAL_V,        N_p("input-name", "Positional V 10"),        input_seq(MOUSECODE_Y_INDEXED(9)), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   1, PLAYER1,  POSITIONAL_V,        N_p("input-name", "Positional V"),           input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   2, PLAYER2,  POSITIONAL_V,        N_p("input-name", "Positional V 2"),         input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   3, PLAYER3,  POSITIONAL_V,        N_p("input-name", "Positional V 3"),         input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   4, PLAYER4,  POSITIONAL_V,        N_p("input-name", "Positional V 4"),         input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   5, PLAYER5,  POSITIONAL_V,        N_p("input-name", "Positional V 5"),         input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   6, PLAYER6,  POSITIONAL_V,        N_p("input-name", "Positional V 6"),         input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   7, PLAYER7,  POSITIONAL_V,        N_p("input-name", "Positional V 7"),         input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   8, PLAYER8,  POSITIONAL_V,        N_p("input-name", "Positional V 8"),         input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   9, PLAYER9,  POSITIONAL_V,        N_p("input-name", "Positional V 9"),         input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(  10, PLAYER10, POSITIONAL_V,        N_p("input-name", "Positional V 10"),        input_seq(), input_seq(), input_seq() ) \
 		CORE_INPUT_TYPES_END()
 
 #define CORE_INPUT_TYPES_DIAL \
 		CORE_INPUT_TYPES_BEGIN(dial) \
-		INPUT_PORT_ANALOG_TYPE(   1, PLAYER1,  DIAL,                N_p("input-name", "Dial"),                   input_seq(MOUSECODE_X_INDEXED(0)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   2, PLAYER2,  DIAL,                N_p("input-name", "Dial 2"),                 input_seq(MOUSECODE_X_INDEXED(1)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   3, PLAYER3,  DIAL,                N_p("input-name", "Dial 3"),                 input_seq(MOUSECODE_X_INDEXED(2)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   4, PLAYER4,  DIAL,                N_p("input-name", "Dial 4"),                 input_seq(MOUSECODE_X_INDEXED(3)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   5, PLAYER5,  DIAL,                N_p("input-name", "Dial 5"),                 input_seq(MOUSECODE_X_INDEXED(4)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   6, PLAYER6,  DIAL,                N_p("input-name", "Dial 6"),                 input_seq(MOUSECODE_X_INDEXED(5)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   7, PLAYER7,  DIAL,                N_p("input-name", "Dial 7"),                 input_seq(MOUSECODE_X_INDEXED(6)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   8, PLAYER8,  DIAL,                N_p("input-name", "Dial 8"),                 input_seq(MOUSECODE_X_INDEXED(7)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   9, PLAYER9,  DIAL,                N_p("input-name", "Dial 9"),                 input_seq(MOUSECODE_X_INDEXED(8)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(  10, PLAYER10, DIAL,                N_p("input-name", "Dial 10"),                input_seq(MOUSECODE_X_INDEXED(9)), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   1, PLAYER1,  DIAL,                N_p("input-name", "Dial"),                   input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   2, PLAYER2,  DIAL,                N_p("input-name", "Dial 2"),                 input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   3, PLAYER3,  DIAL,                N_p("input-name", "Dial 3"),                 input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   4, PLAYER4,  DIAL,                N_p("input-name", "Dial 4"),                 input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   5, PLAYER5,  DIAL,                N_p("input-name", "Dial 5"),                 input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   6, PLAYER6,  DIAL,                N_p("input-name", "Dial 6"),                 input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   7, PLAYER7,  DIAL,                N_p("input-name", "Dial 7"),                 input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   8, PLAYER8,  DIAL,                N_p("input-name", "Dial 8"),                 input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   9, PLAYER9,  DIAL,                N_p("input-name", "Dial 9"),                 input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(  10, PLAYER10, DIAL,                N_p("input-name", "Dial 10"),                input_seq(), input_seq(), input_seq() ) \
 		CORE_INPUT_TYPES_END()
 
 #define CORE_INPUT_TYPES_DIAL_V \
 		CORE_INPUT_TYPES_BEGIN(dial_v) \
-		INPUT_PORT_ANALOG_TYPE(   1, PLAYER1,  DIAL_V,              N_p("input-name", "Dial V"),                 input_seq(MOUSECODE_Y_INDEXED(0)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   2, PLAYER2,  DIAL_V,              N_p("input-name", "Dial V 2"),               input_seq(MOUSECODE_Y_INDEXED(1)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   3, PLAYER3,  DIAL_V,              N_p("input-name", "Dial V 3"),               input_seq(MOUSECODE_Y_INDEXED(2)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   4, PLAYER4,  DIAL_V,              N_p("input-name", "Dial V 4"),               input_seq(MOUSECODE_Y_INDEXED(3)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   5, PLAYER5,  DIAL_V,              N_p("input-name", "Dial V 5"),               input_seq(MOUSECODE_Y_INDEXED(4)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   6, PLAYER6,  DIAL_V,              N_p("input-name", "Dial V 6"),               input_seq(MOUSECODE_Y_INDEXED(5)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   7, PLAYER7,  DIAL_V,              N_p("input-name", "Dial V 7"),               input_seq(MOUSECODE_Y_INDEXED(6)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   8, PLAYER8,  DIAL_V,              N_p("input-name", "Dial V 8"),               input_seq(MOUSECODE_Y_INDEXED(7)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   9, PLAYER9,  DIAL_V,              N_p("input-name", "Dial V 9"),               input_seq(MOUSECODE_Y_INDEXED(8)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(  10, PLAYER10, DIAL_V,              N_p("input-name", "Dial V 10"),              input_seq(MOUSECODE_Y_INDEXED(9)), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   1, PLAYER1,  DIAL_V,              N_p("input-name", "Dial V"),                 input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   2, PLAYER2,  DIAL_V,              N_p("input-name", "Dial V 2"),               input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   3, PLAYER3,  DIAL_V,              N_p("input-name", "Dial V 3"),               input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   4, PLAYER4,  DIAL_V,              N_p("input-name", "Dial V 4"),               input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   5, PLAYER5,  DIAL_V,              N_p("input-name", "Dial V 5"),               input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   6, PLAYER6,  DIAL_V,              N_p("input-name", "Dial V 6"),               input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   7, PLAYER7,  DIAL_V,              N_p("input-name", "Dial V 7"),               input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   8, PLAYER8,  DIAL_V,              N_p("input-name", "Dial V 8"),               input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   9, PLAYER9,  DIAL_V,              N_p("input-name", "Dial V 9"),               input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(  10, PLAYER10, DIAL_V,              N_p("input-name", "Dial V 10"),              input_seq(), input_seq(), input_seq() ) \
 		CORE_INPUT_TYPES_END()
 
 #define CORE_INPUT_TYPES_TRACKBALL_X \
 		CORE_INPUT_TYPES_BEGIN(trackball_x) \
-		INPUT_PORT_ANALOG_TYPE(   1, PLAYER1,  TRACKBALL_X,         N_p("input-name", "Trackball X"),            input_seq(MOUSECODE_X_INDEXED(0)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   2, PLAYER2,  TRACKBALL_X,         N_p("input-name", "Trackball X 2"),          input_seq(MOUSECODE_X_INDEXED(1)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   3, PLAYER3,  TRACKBALL_X,         N_p("input-name", "Trackball X 3"),          input_seq(MOUSECODE_X_INDEXED(2)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   4, PLAYER4,  TRACKBALL_X,         N_p("input-name", "Trackball X 4"),          input_seq(MOUSECODE_X_INDEXED(3)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   5, PLAYER5,  TRACKBALL_X,         N_p("input-name", "Trackball X 5"),          input_seq(MOUSECODE_X_INDEXED(4)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   6, PLAYER6,  TRACKBALL_X,         N_p("input-name", "Trackball X 6"),          input_seq(MOUSECODE_X_INDEXED(5)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   7, PLAYER7,  TRACKBALL_X,         N_p("input-name", "Trackball X 7"),          input_seq(MOUSECODE_X_INDEXED(6)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   8, PLAYER8,  TRACKBALL_X,         N_p("input-name", "Trackball X 8"),          input_seq(MOUSECODE_X_INDEXED(7)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   9, PLAYER9,  TRACKBALL_X,         N_p("input-name", "Trackball X 9"),          input_seq(MOUSECODE_X_INDEXED(8)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(  10, PLAYER10, TRACKBALL_X,         N_p("input-name", "Trackball X 10"),         input_seq(MOUSECODE_X_INDEXED(9)), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   1, PLAYER1,  TRACKBALL_X,         N_p("input-name", "Trackball X"),            input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   2, PLAYER2,  TRACKBALL_X,         N_p("input-name", "Trackball X 2"),          input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   3, PLAYER3,  TRACKBALL_X,         N_p("input-name", "Trackball X 3"),          input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   4, PLAYER4,  TRACKBALL_X,         N_p("input-name", "Trackball X 4"),          input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   5, PLAYER5,  TRACKBALL_X,         N_p("input-name", "Trackball X 5"),          input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   6, PLAYER6,  TRACKBALL_X,         N_p("input-name", "Trackball X 6"),          input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   7, PLAYER7,  TRACKBALL_X,         N_p("input-name", "Trackball X 7"),          input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   8, PLAYER8,  TRACKBALL_X,         N_p("input-name", "Trackball X 8"),          input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   9, PLAYER9,  TRACKBALL_X,         N_p("input-name", "Trackball X 9"),          input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(  10, PLAYER10, TRACKBALL_X,         N_p("input-name", "Trackball X 10"),         input_seq(), input_seq(), input_seq() ) \
 		CORE_INPUT_TYPES_END()
 
 #define CORE_INPUT_TYPES_TRACKBALL_Y \
 		CORE_INPUT_TYPES_BEGIN(trackball_y) \
-		INPUT_PORT_ANALOG_TYPE(   1, PLAYER1,  TRACKBALL_Y,         N_p("input-name", "Trackball Y"),            input_seq(MOUSECODE_Y_INDEXED(0)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   2, PLAYER2,  TRACKBALL_Y,         N_p("input-name", "Trackball Y 2"),          input_seq(MOUSECODE_Y_INDEXED(1)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   3, PLAYER3,  TRACKBALL_Y,         N_p("input-name", "Trackball Y 3"),          input_seq(MOUSECODE_Y_INDEXED(2)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   4, PLAYER4,  TRACKBALL_Y,         N_p("input-name", "Trackball Y 4"),          input_seq(MOUSECODE_Y_INDEXED(3)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   5, PLAYER5,  TRACKBALL_Y,         N_p("input-name", "Trackball Y 5"),          input_seq(MOUSECODE_Y_INDEXED(4)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   6, PLAYER6,  TRACKBALL_Y,         N_p("input-name", "Trackball Y 6"),          input_seq(MOUSECODE_Y_INDEXED(5)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   7, PLAYER7,  TRACKBALL_Y,         N_p("input-name", "Trackball Y 7"),          input_seq(MOUSECODE_Y_INDEXED(6)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   8, PLAYER8,  TRACKBALL_Y,         N_p("input-name", "Trackball Y 8"),          input_seq(MOUSECODE_Y_INDEXED(7)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   9, PLAYER9,  TRACKBALL_Y,         N_p("input-name", "Trackball Y 9"),          input_seq(MOUSECODE_Y_INDEXED(8)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(  10, PLAYER10, TRACKBALL_Y,         N_p("input-name", "Trackball Y 10"),         input_seq(MOUSECODE_Y_INDEXED(9)), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   1, PLAYER1,  TRACKBALL_Y,         N_p("input-name", "Trackball Y"),            input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   2, PLAYER2,  TRACKBALL_Y,         N_p("input-name", "Trackball Y 2"),          input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   3, PLAYER3,  TRACKBALL_Y,         N_p("input-name", "Trackball Y 3"),          input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   4, PLAYER4,  TRACKBALL_Y,         N_p("input-name", "Trackball Y 4"),          input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   5, PLAYER5,  TRACKBALL_Y,         N_p("input-name", "Trackball Y 5"),          input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   6, PLAYER6,  TRACKBALL_Y,         N_p("input-name", "Trackball Y 6"),          input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   7, PLAYER7,  TRACKBALL_Y,         N_p("input-name", "Trackball Y 7"),          input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   8, PLAYER8,  TRACKBALL_Y,         N_p("input-name", "Trackball Y 8"),          input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   9, PLAYER9,  TRACKBALL_Y,         N_p("input-name", "Trackball Y 9"),          input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(  10, PLAYER10, TRACKBALL_Y,         N_p("input-name", "Trackball Y 10"),         input_seq(), input_seq(), input_seq() ) \
 		CORE_INPUT_TYPES_END()
 
 #define CORE_INPUT_TYPES_AD_STICK_X \
 		CORE_INPUT_TYPES_BEGIN(ad_stick_x) \
-		INPUT_PORT_ANALOG_TYPE(   1, PLAYER1,  AD_STICK_X,          N_p("input-name", "AD Stick X"),             input_seq(MOUSECODE_X_INDEXED(0)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   2, PLAYER2,  AD_STICK_X,          N_p("input-name", "AD Stick X 2"),           input_seq(MOUSECODE_X_INDEXED(1)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   3, PLAYER3,  AD_STICK_X,          N_p("input-name", "AD Stick X 3"),           input_seq(MOUSECODE_X_INDEXED(2)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   4, PLAYER4,  AD_STICK_X,          N_p("input-name", "AD Stick X 4"),           input_seq(MOUSECODE_X_INDEXED(3)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   5, PLAYER5,  AD_STICK_X,          N_p("input-name", "AD Stick X 5"),           input_seq(MOUSECODE_X_INDEXED(4)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   6, PLAYER6,  AD_STICK_X,          N_p("input-name", "AD Stick X 6"),           input_seq(MOUSECODE_X_INDEXED(5)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   7, PLAYER7,  AD_STICK_X,          N_p("input-name", "AD Stick X 7"),           input_seq(MOUSECODE_X_INDEXED(6)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   8, PLAYER8,  AD_STICK_X,          N_p("input-name", "AD Stick X 8"),           input_seq(MOUSECODE_X_INDEXED(7)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   9, PLAYER9,  AD_STICK_X,          N_p("input-name", "AD Stick X 9"),           input_seq(MOUSECODE_X_INDEXED(8)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(  10, PLAYER10, AD_STICK_X,          N_p("input-name", "AD Stick X 10"),          input_seq(MOUSECODE_X_INDEXED(9)), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   1, PLAYER1,  AD_STICK_X,          N_p("input-name", "AD Stick X"),             input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   2, PLAYER2,  AD_STICK_X,          N_p("input-name", "AD Stick X 2"),           input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   3, PLAYER3,  AD_STICK_X,          N_p("input-name", "AD Stick X 3"),           input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   4, PLAYER4,  AD_STICK_X,          N_p("input-name", "AD Stick X 4"),           input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   5, PLAYER5,  AD_STICK_X,          N_p("input-name", "AD Stick X 5"),           input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   6, PLAYER6,  AD_STICK_X,          N_p("input-name", "AD Stick X 6"),           input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   7, PLAYER7,  AD_STICK_X,          N_p("input-name", "AD Stick X 7"),           input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   8, PLAYER8,  AD_STICK_X,          N_p("input-name", "AD Stick X 8"),           input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   9, PLAYER9,  AD_STICK_X,          N_p("input-name", "AD Stick X 9"),           input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(  10, PLAYER10, AD_STICK_X,          N_p("input-name", "AD Stick X 10"),          input_seq(), input_seq(), input_seq() ) \
 		CORE_INPUT_TYPES_END()
 
 #define CORE_INPUT_TYPES_AD_STICK_Y \
 		CORE_INPUT_TYPES_BEGIN(ad_stick_y) \
-		INPUT_PORT_ANALOG_TYPE(   1, PLAYER1,  AD_STICK_Y,          N_p("input-name", "AD Stick Y"),             input_seq(MOUSECODE_Y_INDEXED(0)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   2, PLAYER2,  AD_STICK_Y,          N_p("input-name", "AD Stick Y 2"),           input_seq(MOUSECODE_Y_INDEXED(1)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   3, PLAYER3,  AD_STICK_Y,          N_p("input-name", "AD Stick Y 3"),           input_seq(MOUSECODE_Y_INDEXED(2)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   4, PLAYER4,  AD_STICK_Y,          N_p("input-name", "AD Stick Y 4"),           input_seq(MOUSECODE_Y_INDEXED(3)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   5, PLAYER5,  AD_STICK_Y,          N_p("input-name", "AD Stick Y 5"),           input_seq(MOUSECODE_Y_INDEXED(4)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   6, PLAYER6,  AD_STICK_Y,          N_p("input-name", "AD Stick Y 6"),           input_seq(MOUSECODE_Y_INDEXED(5)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   7, PLAYER7,  AD_STICK_Y,          N_p("input-name", "AD Stick Y 7"),           input_seq(MOUSECODE_Y_INDEXED(6)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   8, PLAYER8,  AD_STICK_Y,          N_p("input-name", "AD Stick Y 8"),           input_seq(MOUSECODE_Y_INDEXED(7)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   9, PLAYER9,  AD_STICK_Y,          N_p("input-name", "AD Stick Y 9"),           input_seq(MOUSECODE_Y_INDEXED(8)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(  10, PLAYER10, AD_STICK_Y,          N_p("input-name", "AD Stick Y 10"),          input_seq(MOUSECODE_Y_INDEXED(9)), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   1, PLAYER1,  AD_STICK_Y,          N_p("input-name", "AD Stick Y"),             input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   2, PLAYER2,  AD_STICK_Y,          N_p("input-name", "AD Stick Y 2"),           input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   3, PLAYER3,  AD_STICK_Y,          N_p("input-name", "AD Stick Y 3"),           input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   4, PLAYER4,  AD_STICK_Y,          N_p("input-name", "AD Stick Y 4"),           input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   5, PLAYER5,  AD_STICK_Y,          N_p("input-name", "AD Stick Y 5"),           input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   6, PLAYER6,  AD_STICK_Y,          N_p("input-name", "AD Stick Y 6"),           input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   7, PLAYER7,  AD_STICK_Y,          N_p("input-name", "AD Stick Y 7"),           input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   8, PLAYER8,  AD_STICK_Y,          N_p("input-name", "AD Stick Y 8"),           input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   9, PLAYER9,  AD_STICK_Y,          N_p("input-name", "AD Stick Y 9"),           input_seq(), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(  10, PLAYER10, AD_STICK_Y,          N_p("input-name", "AD Stick Y 10"),          input_seq(), input_seq(), input_seq() ) \
 		CORE_INPUT_TYPES_END()
 
 #define CORE_INPUT_TYPES_AD_STICK_Z \
@@ -810,30 +810,30 @@ namespace {
 
 #define CORE_INPUT_TYPES_LIGHTGUN_X \
 		CORE_INPUT_TYPES_BEGIN(lightgun_x) \
-		INPUT_PORT_ANALOG_TYPE(   1, PLAYER1,  LIGHTGUN_X,          N_p("input-name", "Lightgun X"),             input_seq(GUNCODE_X_INDEXED(0), input_seq::or_code, MOUSECODE_X_INDEXED(0)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   2, PLAYER2,  LIGHTGUN_X,          N_p("input-name", "Lightgun X 2"),           input_seq(GUNCODE_X_INDEXED(1), input_seq::or_code, MOUSECODE_X_INDEXED(1)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   3, PLAYER3,  LIGHTGUN_X,          N_p("input-name", "Lightgun X 3"),           input_seq(GUNCODE_X_INDEXED(2), input_seq::or_code, MOUSECODE_X_INDEXED(2)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   4, PLAYER4,  LIGHTGUN_X,          N_p("input-name", "Lightgun X 4"),           input_seq(GUNCODE_X_INDEXED(3), input_seq::or_code, MOUSECODE_X_INDEXED(3)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   5, PLAYER5,  LIGHTGUN_X,          N_p("input-name", "Lightgun X 5"),           input_seq(GUNCODE_X_INDEXED(4), input_seq::or_code, MOUSECODE_X_INDEXED(4)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   6, PLAYER6,  LIGHTGUN_X,          N_p("input-name", "Lightgun X 6"),           input_seq(GUNCODE_X_INDEXED(5), input_seq::or_code, MOUSECODE_X_INDEXED(5)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   7, PLAYER7,  LIGHTGUN_X,          N_p("input-name", "Lightgun X 7"),           input_seq(GUNCODE_X_INDEXED(6), input_seq::or_code, MOUSECODE_X_INDEXED(6)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   8, PLAYER8,  LIGHTGUN_X,          N_p("input-name", "Lightgun X 8"),           input_seq(GUNCODE_X_INDEXED(7), input_seq::or_code, MOUSECODE_X_INDEXED(7)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   9, PLAYER9,  LIGHTGUN_X,          N_p("input-name", "Lightgun X 9"),           input_seq(GUNCODE_X_INDEXED(8), input_seq::or_code, MOUSECODE_X_INDEXED(8)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(  10, PLAYER10, LIGHTGUN_X,          N_p("input-name", "Lightgun X 10"),          input_seq(GUNCODE_X_INDEXED(9), input_seq::or_code, MOUSECODE_X_INDEXED(9)), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   1, PLAYER1,  LIGHTGUN_X,          N_p("input-name", "Lightgun X"),             input_seq(GUNCODE_X_INDEXED(0)), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   2, PLAYER2,  LIGHTGUN_X,          N_p("input-name", "Lightgun X 2"),           input_seq(GUNCODE_X_INDEXED(1)), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   3, PLAYER3,  LIGHTGUN_X,          N_p("input-name", "Lightgun X 3"),           input_seq(GUNCODE_X_INDEXED(2)), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   4, PLAYER4,  LIGHTGUN_X,          N_p("input-name", "Lightgun X 4"),           input_seq(GUNCODE_X_INDEXED(3)), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   5, PLAYER5,  LIGHTGUN_X,          N_p("input-name", "Lightgun X 5"),           input_seq(GUNCODE_X_INDEXED(4)), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   6, PLAYER6,  LIGHTGUN_X,          N_p("input-name", "Lightgun X 6"),           input_seq(GUNCODE_X_INDEXED(5)), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   7, PLAYER7,  LIGHTGUN_X,          N_p("input-name", "Lightgun X 7"),           input_seq(GUNCODE_X_INDEXED(6)), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   8, PLAYER8,  LIGHTGUN_X,          N_p("input-name", "Lightgun X 8"),           input_seq(GUNCODE_X_INDEXED(7)), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   9, PLAYER9,  LIGHTGUN_X,          N_p("input-name", "Lightgun X 9"),           input_seq(GUNCODE_X_INDEXED(8)), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(  10, PLAYER10, LIGHTGUN_X,          N_p("input-name", "Lightgun X 10"),          input_seq(GUNCODE_X_INDEXED(9)), input_seq(), input_seq() ) \
 		CORE_INPUT_TYPES_END()
 
 #define CORE_INPUT_TYPES_LIGHTGUN_Y \
 		CORE_INPUT_TYPES_BEGIN(lightgun_y) \
-		INPUT_PORT_ANALOG_TYPE(   1, PLAYER1,  LIGHTGUN_Y,          N_p("input-name", "Lightgun Y"),             input_seq(GUNCODE_Y_INDEXED(0), input_seq::or_code, MOUSECODE_Y_INDEXED(0)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   2, PLAYER2,  LIGHTGUN_Y,          N_p("input-name", "Lightgun Y 2"),           input_seq(GUNCODE_Y_INDEXED(1), input_seq::or_code, MOUSECODE_Y_INDEXED(1)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   3, PLAYER3,  LIGHTGUN_Y,          N_p("input-name", "Lightgun Y 3"),           input_seq(GUNCODE_Y_INDEXED(2), input_seq::or_code, MOUSECODE_Y_INDEXED(2)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   4, PLAYER4,  LIGHTGUN_Y,          N_p("input-name", "Lightgun Y 4"),           input_seq(GUNCODE_Y_INDEXED(3), input_seq::or_code, MOUSECODE_Y_INDEXED(3)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   5, PLAYER5,  LIGHTGUN_Y,          N_p("input-name", "Lightgun Y 5"),           input_seq(GUNCODE_Y_INDEXED(4), input_seq::or_code, MOUSECODE_Y_INDEXED(4)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   6, PLAYER6,  LIGHTGUN_Y,          N_p("input-name", "Lightgun Y 6"),           input_seq(GUNCODE_Y_INDEXED(5), input_seq::or_code, MOUSECODE_Y_INDEXED(5)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   7, PLAYER7,  LIGHTGUN_Y,          N_p("input-name", "Lightgun Y 7"),           input_seq(GUNCODE_Y_INDEXED(6), input_seq::or_code, MOUSECODE_Y_INDEXED(6)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   8, PLAYER8,  LIGHTGUN_Y,          N_p("input-name", "Lightgun Y 8"),           input_seq(GUNCODE_Y_INDEXED(7), input_seq::or_code, MOUSECODE_Y_INDEXED(7)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(   9, PLAYER9,  LIGHTGUN_Y,          N_p("input-name", "Lightgun Y 9"),           input_seq(GUNCODE_Y_INDEXED(8), input_seq::or_code, MOUSECODE_Y_INDEXED(8)), input_seq(), input_seq() ) \
-		INPUT_PORT_ANALOG_TYPE(  10, PLAYER10, LIGHTGUN_Y,          N_p("input-name", "Lightgun Y 10"),          input_seq(GUNCODE_Y_INDEXED(9), input_seq::or_code, MOUSECODE_Y_INDEXED(9)), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   1, PLAYER1,  LIGHTGUN_Y,          N_p("input-name", "Lightgun Y"),             input_seq(GUNCODE_Y_INDEXED(0)), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   2, PLAYER2,  LIGHTGUN_Y,          N_p("input-name", "Lightgun Y 2"),           input_seq(GUNCODE_Y_INDEXED(1)), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   3, PLAYER3,  LIGHTGUN_Y,          N_p("input-name", "Lightgun Y 3"),           input_seq(GUNCODE_Y_INDEXED(2)), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   4, PLAYER4,  LIGHTGUN_Y,          N_p("input-name", "Lightgun Y 4"),           input_seq(GUNCODE_Y_INDEXED(3)), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   5, PLAYER5,  LIGHTGUN_Y,          N_p("input-name", "Lightgun Y 5"),           input_seq(GUNCODE_Y_INDEXED(4)), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   6, PLAYER6,  LIGHTGUN_Y,          N_p("input-name", "Lightgun Y 6"),           input_seq(GUNCODE_Y_INDEXED(5)), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   7, PLAYER7,  LIGHTGUN_Y,          N_p("input-name", "Lightgun Y 7"),           input_seq(GUNCODE_Y_INDEXED(6)), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   8, PLAYER8,  LIGHTGUN_Y,          N_p("input-name", "Lightgun Y 8"),           input_seq(GUNCODE_Y_INDEXED(7)), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(   9, PLAYER9,  LIGHTGUN_Y,          N_p("input-name", "Lightgun Y 9"),           input_seq(GUNCODE_Y_INDEXED(8)), input_seq(), input_seq() ) \
+		INPUT_PORT_ANALOG_TYPE(  10, PLAYER10, LIGHTGUN_Y,          N_p("input-name", "Lightgun Y 10"),          input_seq(GUNCODE_Y_INDEXED(9)), input_seq(), input_seq() ) \
 		CORE_INPUT_TYPES_END()
 
 #define CORE_INPUT_TYPES_MOUSE_X \
