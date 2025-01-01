@@ -301,7 +301,7 @@ namespace {
 	[[maybe_unused]] uint32_t time_to_prodos(time_t t) {
 
 		uint32_t rv = 0;
-		if (time == 0) return rv;
+		if (t == 0) return rv;
 
 		struct tm *tm = localtime(&t);
 
@@ -358,7 +358,7 @@ namespace {
 	uint64_t time_to_hextime(time_t t) {
 		uint64_t rv = 0;
 
-		if (time == 0) return rv;
+		if (t == 0) return rv;
 		struct tm *tm = localtime(&t);
 		if (tm->tm_sec == 60) tm->tm_sec = 59;       /* leap second */
 
