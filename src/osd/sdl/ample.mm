@@ -109,6 +109,12 @@ enum {
 		return YES;
 	}
 
+	if (cmd == @selector(toggleNaturalKeyboard:)) {
+		bool on = _machine->natkeyboard().in_use();
+		[menuItem setState: on ? NSControlStateValueOn : NSControlStateValueOff];
+		return YES;
+	}
+
 
 	if (cmd == @selector(recordAVI:) || cmd == @selector(recordMNG:) || cmd == @selector(recordStop:)) {
 		bool on = _machine->video().is_recording();
@@ -220,6 +226,11 @@ enum {
 	_machine->natkeyboard().paste();
 }
 
+-(void)toggleNaturalKeyboard:(id)sender {
+	bool on = _machine->natkeyboard().in_use();
+	_machine->natkeyboard().set_in_use(!on);
+}
+
 
 -(void)releaseKeys:(id)sender {
 	downcast<sdl_osd_interface &>(_machine->osd()).release_keys();
@@ -326,10 +337,17 @@ enum {
 	}
 
 	{
-		NSMenuItem *item = [menu addItemWithTitle: @"UI Keyboard" action: @selector(toggleKeyboard:) keyEquivalent: @"k"];
+		NSMenuItem *item = [menu addItemWithTitle: @"UI Keyboard" action: @selector(toggleKeyboard:) keyEquivalent: @"u"];
 		[item setKeyEquivalentModifierMask: NSEventModifierFlagOption|NSEventModifierFlagCommand];
 		[item setTarget: self];
 	}
+
+	{
+		NSMenuItem *item = [menu addItemWithTitle: @"Natural Keyboard" action: @selector(toggleNaturalKeyboard:) keyEquivalent: @"k"];
+		[item setKeyEquivalentModifierMask: NSEventModifierFlagOption|NSEventModifierFlagCommand];
+		[item setTarget: self];
+	}
+
 	{
 		NSMenuItem *item = [NSMenuItem separatorItem]; [menu addItem: item];
 	}
