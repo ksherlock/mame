@@ -6,7 +6,9 @@ DRIVERS = apple/apple1.cpp apple/apple2.cpp apple/apple3.cpp apple/apple2e.cpp a
 	apple/maclc.cpp apple/maclc3.cpp apple/macprtb.cpp apple/macpwrbk030.cpp \
 	apple/macquadra605.cpp apple/macquadra630.cpp apple/macquadra700.cpp apple/macquadra800.cpp \
 	agat/agat.cpp vtech/laser3k.cpp \
+	acorn/bbc.cpp acorn/electron.cpp \
 	atari/atarist.cpp \
+	commodore/c64.cpp commodore/c128.cpp commodore/kim1.cpp commodore/pet.cpp
 	trs/coco12.cpp trs/coco3.cpp trs/dragon.cpp trs/trs80.cpp trs/trs80m2.cpp trs/trs80m3.cpp \
 	trs/mc10.cpp \
 	tangerine/microtan.cpp tangerine/oric.cpp \
@@ -20,8 +22,7 @@ DRIVERS = apple/apple1.cpp apple/apple2.cpp apple/apple3.cpp apple/apple2e.cpp a
 	sgi/indy_indigo2.cpp sgi/ip12.cpp sgi/ip20.cpp sgi/ip6.cpp \
 	sony/news_68k.cpp sony/news_r3k.cpp sony/news_r4k.cpp \
 	sun/sun1.cpp sun/sun2.cpp sun/sun3.cpp sun/sun3x.cpp sun/sun4.cpp \
-	amiga/amiga.cpp acorn/bbc.cpp acorn/electron.cpp \
-	commodore/c64.cpp commodore/c128.cpp commodore/kim1.cpp commodore/pet.cpp
+	amiga/amiga.cpp
 
 
 SOURCES = $(subst $(space),$(comma),$(addprefix src/mame/,$(DRIVERS)))
