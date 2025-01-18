@@ -72,6 +72,12 @@ HASH = apple1.xml \
 	st_flop.xml st_cart.xml \
 	oric1_cass.xml \
 	coco_cart.xml coco_flop.xml \
+	bbc_cass.xml bbc_flop_32016.xml bbc_flop_6502.xml bbc_flop_68000.xml bbc_flop_80186.xml \
+	bbc_flop_arm.xml bbc_flop_hybrid.xml bbc_flop_torch.xml bbc_flop_z80.xml bbc_hdd.xml \
+	bbc_rom.xml bbcb_flop.xml bbcb_flop_orig.xml bbcb_flop_us.xml bbcbc.xml bbcm_cart.xml \
+	bbcm_flop.xml bbcmc_flop.xml \
+	electron_cart.xml electron_cass.xml electron_flop.xml electron_rom.xml \
+	c64_cart.xml c64_cass.xml c64_flop_misc.xml c64_flop_orig.xml \
 	softwarelist.dtd
 
 mame-data.tgz:
