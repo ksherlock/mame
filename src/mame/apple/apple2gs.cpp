@@ -3957,6 +3957,11 @@ void apple2gs_state::apple2gsmt(machine_config &config)
 	applefdintf_device::add_35_hd(config, m_floppy[3]);
 }
 
+#ifdef AMPLE
+// don't complain about character rom.
+#undef BAD_DUMP
+#define BAD_DUMP ""
+#endif
 /***************************************************************************
 
   Game driver(s)
