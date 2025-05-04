@@ -462,8 +462,10 @@ void w5100_socket_device::write_register(offs_t offset, uint8_t data)
 	{
 		case Sn_MR:
 			m_mr = data;
+			#ifdef SET_PROMISC
 			if (m_sn == 0 && (data & Sn_MR_MF) == Sn_MR_MF)
 				m_parent->set_promisc(false);
+			#endif
 			break;
 
 		case Sn_CR:
@@ -735,8 +737,10 @@ void w5100_socket_device::command_open()
 				m_sr = Sn_SR_MACRAW;
 				LOGMASKED(LOG_SR, "Socket -> %s\n", sr_to_cstring(m_sr));
 				max_mss = MAX_MSS_MACRAW;
+				#ifdef SET_PROMISC
 				if ((m_mr & Sn_MR_MF) == 0)
 					m_parent->set_promisc(true);
+				#endif
 			}
 			else
 				proto = 0;
