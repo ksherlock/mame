@@ -17,8 +17,8 @@
 
 #if defined(OSD_NET_USE_VMNET_HELPER)
 
+#include "netdev_common.h"
 #include "emu.h"
-#include "osdnet.h"
 
 #include <cstdint>
 #include <cstdlib>
@@ -63,32 +63,38 @@ public:
 	}
 	virtual ~vmnet_helper_module() {}
 
-	virtual int init(osd_interface &osd, const osd_options &options);
-	virtual void exit();
+	virtual int init(osd_interface &osd, const osd_options &options) override;
+	virtual void exit() override;
 
-	virtual bool probe() {
+	virtual bool probe() override {
 		// fprintf(stderr, "%s\n", __func__);
 		return true;
 	}
+
+	virtual std::unique_ptr<network_device> open_device(int id, network_handler &handler) override;
+	virtual std::vector<network_device_info> list_devices() override;
+
 };
 
-class netdev_vmnet_helper : public osd_network_device
+class netdev_vmnet_helper : public network_device_base
 {
 public:
 	netdev_vmnet_helper(const char *name, network_handler &ifdev);
 	~netdev_vmnet_helper();
 
-	int send(uint8_t *buf, int len) override;
-	void set_mac(const uint8_t *mac) override;
+	int send(void const *buf, int len) override;
+	// void set_mac(const uint8_t *mac) override;
+
 protected:
 	int recv_dev(uint8_t **buf) override;
+
 private:
 
 	void shutdown_child();
 	bool check_child();
 
 	int message_status();
-	int message_write(void *buffer, uint32_t length);
+	int message_write(const void *buffer, uint32_t length);
 	int message_read();
 
 	ssize_t read(void *buffer, size_t size);
@@ -104,7 +110,8 @@ private:
 	uint32_t m_vmnet_mtu;
 	uint32_t m_vmnet_packet_size;
 
-	uint8_t m_mac[6];
+	// uint8_t m_mac[6];
+	network_handler &m_network_handler;
 
 	uint8_t *m_buffer = 0;
 	pid_t m_child = -1;
@@ -160,8 +167,8 @@ static int set_close_exec(int fd) {
 	return flags >= 0 ? fcntl(fd, F_SETFD, flags | FD_CLOEXEC) : -1;
 }
 
-netdev_vmnet_helper::netdev_vmnet_helper(const char *name, network_handler &ifdev)
-	: osd_network_device(ifdev) {
+netdev_vmnet_helper::netdev_vmnet_helper(const char *name, network_handler &handler)
+	: network_device_base(handler), m_network_handler(handler) {
 
 	// fprintf(stderr, "%s\n", __func__);
 
@@ -282,7 +289,7 @@ int netdev_vmnet_helper::message_status() {
 	if (ok != 6 + 4 + 4) return -1;
 
 	/* copy mac to fake mac */
-	memcpy(m_mac, m_vmnet_mac, 6);
+	// memcpy(m_mac, m_vmnet_mac, 6);
 
 	/* sanity check */
 	/* expect MTU = 1500, packet_size = 1518 */
@@ -295,7 +302,7 @@ int netdev_vmnet_helper::message_status() {
 	return 0;
 }
 
-int netdev_vmnet_helper::message_write(void *buffer, uint32_t length) {
+int netdev_vmnet_helper::message_write(const void *buffer, uint32_t length) {
 	ssize_t ok;
 	uint32_t msg;
 	struct iovec iov[2];
@@ -305,7 +312,7 @@ int netdev_vmnet_helper::message_write(void *buffer, uint32_t length) {
 
 	iov[0].iov_base = &msg;
 	iov[0].iov_len = 4;
-	iov[1].iov_base = buffer;
+	iov[1].iov_base = (void *)buffer;
 	iov[1].iov_len = length;
 
 	ok = writev(iov, 2);
@@ -411,14 +418,14 @@ netdev_vmnet_helper::~netdev_vmnet_helper() {
 	shutdown_child();
 }
 
+#if 0
 void netdev_vmnet_helper::set_mac(const uint8_t *mac)
 {
 	memcpy(m_mac, mac, 6);
 }
+#endif
 
-
-
-int netdev_vmnet_helper::send(uint8_t *buf, int len)
+int netdev_vmnet_helper::send(void const *buf, int len)
 {
 	int ok;
 	struct sigaction oldaction;
@@ -432,11 +439,12 @@ int netdev_vmnet_helper::send(uint8_t *buf, int len)
 		return 0;
 	}
 
+	std::array<u8, 6> my_mac = m_network_handler.get_mac();
 	// copy to our buffer and fix the mac address...
-	if (memcmp(m_mac, m_vmnet_mac, 6) != 0) {
+	if (memcmp(&my_mac[0], m_vmnet_mac, 6) != 0) {
 		// nb - do we need 2 buffers, in case read recv buffer still in use?
 		memcpy(m_buffer, buf, len);
-		fix_outgoing_packet(m_buffer, len, m_vmnet_mac, m_mac);
+		fix_outgoing_packet(m_buffer, len, m_vmnet_mac, &my_mac[0]);
 		buf = m_buffer;
 	}
 
@@ -467,8 +475,9 @@ int netdev_vmnet_helper::recv_dev(uint8_t **buf) {
 	}
 	if (ok == 0) return 0;
 
-	if (memcmp(m_mac, m_vmnet_mac, 6) != 0) {
-		fix_incoming_packet(m_buffer, ok, m_vmnet_mac, m_mac);
+	std::array<u8, 6> my_mac = m_network_handler.get_mac();
+	if (memcmp(&my_mac[0], m_vmnet_mac, 6) != 0) {
+		fix_incoming_packet(m_buffer, ok, m_vmnet_mac, &my_mac[0]);
 	}
 
 	*buf = m_buffer;
@@ -544,22 +553,26 @@ void netdev_vmnet_helper::dump(uint8_t *buf, int len) {
 }
 
 
-static CREATE_NETDEV(create_vmnet_helper)
+std::unique_ptr<network_device> vmnet_helper_module::open_device(int id, network_handler &handler)
 {
-	// fprintf(stderr, "%s\n", __func__);
-	auto *dev = new netdev_vmnet_helper(ifname, ifdev);
-	return dynamic_cast<osd_network_device *>(dev);
+	return std::make_unique<netdev_vmnet_helper>("vmnet_helper", handler);
 }
+
+std::vector<network_device_info> vmnet_helper_module::list_devices()
+{
+	std::vector<network_device_info> result;
+	result.emplace_back(network_device_info{ 0, "VM Network Device (H)" });
+	return result;
+}
+
 
 int vmnet_helper_module::init(osd_interface &osd, const osd_options &options) {
 	// fprintf(stderr, "%s\n", __func__);
-	add_netdev("vmnet_helper", "VM Network Device (H)", create_vmnet_helper);
 	return 0;
 }
 
 void vmnet_helper_module::exit() {
 	// fprintf(stderr, "%s\n", __func__);
-	clear_netdev();
 }
 
 } // anonymous namespace
