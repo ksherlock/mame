@@ -527,7 +527,9 @@ void w5100_device::device_reset()
 
 
 	set_mac(m_shar);
+	#ifdef SET_PROMISC
 	set_promisc(false);
+	#endif
 }
 
 
