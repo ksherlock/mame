@@ -383,7 +383,9 @@ std::unique_ptr<osd::directory::entry> osd_stat(const std::string &path)
 	auto const result = reinterpret_cast<osd::directory::entry *>(
 			::operator new(
 				sizeof(osd::directory::entry) + path.length() + 1,
+				#if __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ >= 101400
 				std::align_val_t(alignof(osd::directory::entry)),
+				#endif
 				std::nothrow));
 	if (!result) return nullptr;
 	new (result) osd::directory::entry;
