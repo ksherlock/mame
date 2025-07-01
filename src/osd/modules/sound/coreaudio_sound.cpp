@@ -31,6 +31,10 @@
 #define PROPERTY_ELEMENT_MASTER kAudioObjectPropertyElementMaster
 #endif
 
+#if defined(__MAC_OS_X_VERSION_MIN_REQUIRED) && __MAC_OS_X_VERSION_MIN_REQUIRED < 101500
+#define kAudioChannelLabel_LeftTopMiddle 49
+#endif
+
 namespace osd
 {
 namespace
