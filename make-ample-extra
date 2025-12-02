@@ -18,11 +18,13 @@ DRIVERS = apple/apple1.cpp apple/apple2.cpp apple/apple3.cpp apple/apple2e.cpp a
 	ibm/rtpc.cpp \
 	hp/hp9k_3xx.cpp \
 	intergraph/interpro.cpp \
-	mips/mips.cpp \
+	mips/mips.cpp mips/mips_i2000.cpp mips/mips_r3030.cpp \
 	sgi/indy_indigo2.cpp sgi/ip12.cpp sgi/ip20.cpp sgi/ip6.cpp \
 	sony/news_68k.cpp sony/news_r3k.cpp sony/news_r4k.cpp \
 	sun/sun1.cpp sun/sun2.cpp sun/sun3.cpp sun/sun3x.cpp sun/sun4.cpp \
-	amiga/amiga.cpp
+	amiga/amiga.cpp \
+	olivetti/att6300p.cpp \
+	pc/genpc.cpp pc/ibmpc.cpp pc/tandy1t.cpp
 
 
 SOURCES = $(subst $(space),$(comma),$(addprefix src/mame/,$(DRIVERS)))
@@ -58,7 +60,7 @@ mame-arm64:
 
 mame-x64:
 	make -j3 REGENIE=${REGENIE} SOURCES=${SOURCES} SDL_INI_PATH=. USE_VMNET_HELPER=1 USE_PCAP=0 \
-	SDL_FRAMEWORK_PATH="`pwd`/Frameworks" REGENIE=${REGENIE} ARCHOPTS="-DAMPLE -target x86_64-apple-macos10.13" \
+	SDL_FRAMEWORK_PATH="`pwd`/Frameworks" REGENIE=${REGENIE} ARCHOPTS="-DAMPLE -target x86_64-apple-macos10.14" \
 	BUILDDIR=build-x64 UNAME="Darwin x86_64 i386" UNAME_M=x86_64 UNAME_P=i386
 	mv mame mame-x64
 
