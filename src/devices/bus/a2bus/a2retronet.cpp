@@ -12,6 +12,7 @@
 #include "emu.h"
 #include "a2retronet.h"
 #include "imagedev/harddriv.h"
+#include "multibyte.h"
 
 namespace {
 
@@ -112,8 +113,8 @@ protected:
 	uint8_t unit_to_drive(uint8_t unit) const;
 
 
-	uint8_t hdd_read(uint8_t drive, uint16_t block, uint8_t *data);
-	uint8_t hdd_write(uint8_t drive, uint16_t block, const uint8_t *data);
+	uint8_t hdd_read(uint8_t drive, uint32_t block, uint8_t *data);
+	uint8_t hdd_write(uint8_t drive, uint32_t block, const uint8_t *data);
 	size_t hdd_blocks(uint8_t drive);
 
 	uint8_t pro_stat(void);
@@ -128,6 +129,11 @@ protected:
 	required_device_array<harddisk_image_device, 8> m_drive;
 
 private:
+
+
+	std::error_condition load_hd(device_image_interface &image) const;
+
+
 	uint8_t m_sp_control = 0;
 	uint8_t m_output_mask = 0;
 	uint16_t m_sp_read_offset = 0;
@@ -155,7 +161,38 @@ a2bus_retronet_device::a2bus_retronet_device(const machine_config &mconfig, cons
 void a2bus_retronet_device::device_add_mconfig(machine_config &config) {
 	for (unsigned i = 0; i < m_drive.size(); ++i) {
 		HARDDISK(config, m_drive[i], 0);
+		m_drive[i]->set_device_load(FUNC(a2bus_retronet_device::load_hd));
 	}
+}
+
+/*
+ * for now, disk images need to have 512-byte sectors.  
+ */
+std::error_condition a2bus_retronet_device::load_hd(device_image_interface &image) const
+{
+
+	harddisk_image_device *disk = downcast<harddisk_image_device *>(&image);
+	if (!disk->exists())
+		return image_error::UNSPECIFIED;
+
+
+	#if 0
+	if (!image.set_block_size(512))
+		return image_error::INVALIDIMAGE;
+	#endif
+	if (disk->get_info().sectorbytes != 512)
+		return image_error::INVALIDIMAGE;
+
+	#if 0	
+	const hard_disk_file::info &info = image->get_info();
+
+	if (info.sectorbytes != 512)
+	{
+		return image_error::INVALIDIMAGE;
+	}
+	#endif
+
+	return std::error_condition();
 }
 
 
@@ -196,7 +233,7 @@ uint8_t a2bus_retronet_device::read_c0nx(uint8_t offset) {
 
 uint8_t a2bus_retronet_device::read_cffx(uint8_t offset) {
 
-	printf("read_cffx(%02x)\n", offset);
+	// printf("read_cffx(%02x)\n", offset);
 
 	uint8_t rv = -1;
 
@@ -258,7 +295,7 @@ void a2bus_retronet_device::write_c0nx(uint8_t offset, uint8_t data) {
 
 void a2bus_retronet_device::write_cffx(uint8_t offset, uint8_t data) {
 
-	printf("write_cffx(%02x, %02x)\n", offset, data);
+	// printf("write_cffx(%02x, %02x)\n", offset, data);
 
 
 	switch (offset & 0x0f) {
@@ -307,7 +344,7 @@ void a2bus_retronet_device::write_cffx(uint8_t offset, uint8_t data) {
 // CnXX - /IOSEL
 uint8_t a2bus_retronet_device::read_cnxx(uint8_t offset) {
 
-	printf("read_cnxx %02x\n", offset);
+	// printf("read_cnxx %02x\n", offset);
 	return m_rom[m_offset | (slotno() << 8) | offset];
 }
 
@@ -323,7 +360,7 @@ uint8_t a2bus_retronet_device::read_c800(uint16_t offset) {
 
 
 void a2bus_retronet_device::write_c800(uint16_t offset, uint8_t data) {
-	printf("write_c800 %04x %02x\n", offset, data);
+	// printf("write_c800 %04x %02x\n", offset, data);
 	if (offset >= 0x7f0) return write_cffx(offset & 0x0f, data);
 }
 
@@ -405,25 +442,25 @@ void a2bus_retronet_device::do_control() {
 
 
 
-uint8_t a2bus_retronet_device::hdd_read(uint8_t drive, uint16_t block, uint8_t *data) {
+uint8_t a2bus_retronet_device::hdd_read(uint8_t drive, uint32_t block, uint8_t *data) {
 	if (drive >= m_drive.size()) return IO_ERROR;
 
 	harddisk_image_device *disk = m_drive[drive];
 
 	if (disk) {
-		disk->set_block_size(512); // TODO -- if chd, could fail.
+		// TODO -- handle CHD with > 512 blocks?
 		if (disk->read(block, data)) return SUCCESS;
 	}
 
 	return IO_ERROR;
 }
 
-uint8_t a2bus_retronet_device::hdd_write(uint8_t drive, uint16_t block, const uint8_t *data) {
+uint8_t a2bus_retronet_device::hdd_write(uint8_t drive, uint32_t block, const uint8_t *data) {
 	if (drive >= m_drive.size()) return IO_ERROR;
 
 	harddisk_image_device *disk = m_drive[drive];
 	if (disk) {
-		disk->set_block_size(512); // TODO -- if chd, could fail.
+		// TODO -- handle CHD with > 512 blocks?
 		if (disk->write(block, data)) return SUCCESS;
 	}
 
@@ -471,7 +508,7 @@ uint8_t a2bus_retronet_device::pro_stat(void) {
 
 uint8_t a2bus_retronet_device::pro_read(void) {
 	const uint8_t unit = m_sp_buffer[PRODOS_I_UNIT];
-	const uint16_t block = m_sp_buffer[PRODOS_I_BLOCK] | (m_sp_buffer[PRODOS_I_BLOCK + 1] << 8);
+	const uint16_t block = get_u16le(&m_sp_buffer[PRODOS_I_BLOCK]);
 
 	printf("pro_read(%02x (%02x), %04x)\n", unit, unit_to_drive(unit), block);
 
@@ -480,7 +517,7 @@ uint8_t a2bus_retronet_device::pro_read(void) {
 
 uint8_t a2bus_retronet_device::pro_write(void) {
 	const uint8_t unit = m_sp_buffer[PRODOS_I_UNIT];
-	const uint16_t block = m_sp_buffer[PRODOS_I_BLOCK] | (m_sp_buffer[PRODOS_I_BLOCK + 1] << 8);
+	const uint16_t block = get_u16le(&m_sp_buffer[PRODOS_I_BLOCK]);
 
 	printf("pro_write(%02x (%02x), %04x)\n", unit, unit_to_drive(unit), block);
 
@@ -503,8 +540,7 @@ uint8_t a2bus_retronet_device::sp_stat(void) {
 				if (m_drive[i]) count++;
 			}
 
-			stat_list[0] = 8; // bytes low
-			stat_list[1] = 0; // bytes high
+			put_u16le(&stat_list[0], 8); // size
 			stat_list[2 + 0] = count; /* number of drives */
 			stat_list[2 + 1] = 0b01000000; // // block, write, read, online
     		return SP_SUCCESS;
@@ -515,13 +551,6 @@ uint8_t a2bus_retronet_device::sp_stat(void) {
 
 			memset(stat_list, 0x00, 26);
 
-            if (status) {
-                stat_list[0] = 4;   // size header low
-                stat_list[1] = 0;   // size header high
-            } else {
-                stat_list[0] = 25;  // size header low
-                stat_list[1] = 0;   // size header high    
-            }
 
 			size_t blocks = hdd_blocks(unit - 1);
 			if (blocks) {
@@ -529,19 +558,18 @@ uint8_t a2bus_retronet_device::sp_stat(void) {
 			} else {
 				stat_list[2 + 0] = 0b11100000;  // block, write, read;
 			}
-			stat_list[2 + 1] = blocks & 0xff;
-			stat_list[2 + 2] = (blocks >> 8) & 0xff;
-			stat_list[2 + 3] = (blocks >> 16) & 0xff;
+			put_u24le(&stat_list[2+1], blocks);
 
+            if (status) {
+				put_u16le(&stat_list[0], 4); // size
+            } else {
+				put_u16le(&stat_list[0], 25); // size
 
-            if (!status) {
                 stat_list[2 +  4] = 10;   // id string length
                 memcpy(&stat_list[2 + 5], "A2RETRONET      ", 16);
                 stat_list[2 + 21] = 0x02;   // hard disk
                 stat_list[2 + 22] = 0x00;   // removable
-                stat_list[2 + 23] = 0x01;   // firmware version low
-                stat_list[2 + 24] = 0x00;   // firmware version high
-
+				put_u16le(&stat_list[2 + 23], 0x01); // firmware version
             }
             return SP_SUCCESS;
 		}
@@ -555,7 +583,7 @@ uint8_t a2bus_retronet_device::sp_read() {
 	uint8_t *buffer = &m_sp_buffer[SP_O_BUFFER];
 
 	const uint8_t unit = params[SP_PARAM_UNIT];
-	const uint16_t block = (params[SP_PARAM_BLOCK]) | (params[SP_PARAM_BLOCK+1] << 8);
+	const uint32_t block = get_u24le(&params[SP_PARAM_BLOCK]);
 
 	return hdd_read(unit - 1, block, buffer);
 }
@@ -563,8 +591,9 @@ uint8_t a2bus_retronet_device::sp_read() {
 uint8_t a2bus_retronet_device::sp_write() {
 	const uint8_t *params = &m_sp_buffer[SP_I_PARAMS];
 	const uint8_t *buffer = &m_sp_buffer[SP_O_BUFFER];
+
 	const uint8_t unit = params[SP_PARAM_UNIT];
-	const uint16_t block = (params[SP_PARAM_BLOCK]) | (params[SP_PARAM_BLOCK+1] << 8);
+	const uint32_t block = get_u24le(&params[SP_PARAM_BLOCK]);
 
 	return hdd_write(unit - 1, block, buffer);
 }
