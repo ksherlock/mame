@@ -7,7 +7,10 @@
     Implementation of Oliver Schmidt's A2retroNET
     SmartPort mass storage controller.
 
+    ** This is based on the 2025-07-08 release **
+
 *********************************************************************/
+
 
 #include "emu.h"
 #include "a2retronet.h"
@@ -447,7 +450,7 @@ uint8_t a2bus_retronet_device::hdd_read(uint8_t drive, uint32_t block, uint8_t *
 
 	harddisk_image_device *disk = m_drive[drive];
 
-	if (disk) {
+	if (disk && disk->exists()) {
 		// TODO -- handle CHD with > 512 blocks?
 		if (disk->read(block, data)) return SUCCESS;
 	}
@@ -459,7 +462,7 @@ uint8_t a2bus_retronet_device::hdd_write(uint8_t drive, uint32_t block, const ui
 	if (drive >= m_drive.size()) return IO_ERROR;
 
 	harddisk_image_device *disk = m_drive[drive];
-	if (disk) {
+	if (disk && disk->exists()) {
 		// TODO -- handle CHD with > 512 blocks?
 		if (disk->write(block, data)) return SUCCESS;
 	}
@@ -474,7 +477,7 @@ size_t a2bus_retronet_device::hdd_blocks(uint8_t drive) {
 	if (drive >= m_drive.size()) return 0;
 
 	harddisk_image_device *disk = m_drive[drive];
-	if (disk) {
+	if (disk && disk->exists()) {
 		const hard_disk_file::info &info = disk->get_info();
 		size_t blocks = (info.sectors * info.sectorbytes ) / 512;
 		return blocks;
@@ -537,7 +540,7 @@ uint8_t a2bus_retronet_device::sp_stat(void) {
 
 			unsigned count = 0;
 			for (unsigned i = 0; i < m_drive.size(); ++i) {
-				if (m_drive[i]) count++;
+				if (m_drive[i] && m_drive[i]->exists()) count++;
 			}
 
 			put_u16le(&stat_list[0], 8); // size
@@ -590,7 +593,7 @@ uint8_t a2bus_retronet_device::sp_read() {
 
 uint8_t a2bus_retronet_device::sp_write() {
 	const uint8_t *params = &m_sp_buffer[SP_I_PARAMS];
-	const uint8_t *buffer = &m_sp_buffer[SP_O_BUFFER];
+	const uint8_t *buffer = &m_sp_buffer[SP_I_BUFFER];
 
 	const uint8_t unit = params[SP_PARAM_UNIT];
 	const uint32_t block = get_u24le(&params[SP_PARAM_BLOCK]);
@@ -602,3 +605,5 @@ uint8_t a2bus_retronet_device::sp_write() {
 } // anonymous namespace
 
 DEFINE_DEVICE_TYPE_PRIVATE(A2BUS_A2RETRONET, device_a2bus_card_interface, a2bus_retronet_device, "a2retronet", "A2retroNET SmartPort Card")
+
+
