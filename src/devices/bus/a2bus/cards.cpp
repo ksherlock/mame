@@ -166,6 +166,7 @@ void apple2_cards(device_slot_interface &device)
 	device.option_add("ap2", A2BUS_IBSAP2);                    // IBS Computertechnik AP 2 Serial Interface
 	device.option_add("sic", A2BUS_SIC);                       // Apple II Serial Interface Card
 	device.option_add("sweetalk", A2BUS_SWEETALK);             // Micromint Sweet Talker Phonetic Speech Synthesizer Interface
+	device.option_add("retronet", A2BUS_A2RETRONET);           // A2retroNET SmartPort Card
 }
 
 void apple2e_cards(device_slot_interface &device)
@@ -257,6 +258,7 @@ void apple2e_cards(device_slot_interface &device)
 	device.option_add("ap2", A2BUS_IBSAP2);                    // IBS Computertechnik AP 2 Serial Interface
 	device.option_add("sic", A2BUS_SIC);                       // Apple II Serial Interface Card
 	device.option_add("sweetalk", A2BUS_SWEETALK);             // Micromint Sweet Talker Phonetic Speech Synthesizer Interface
+	device.option_add("retronet", A2BUS_A2RETRONET);           // A2retroNET SmartPort Card
 }
 
 void apple2gs_cards(device_slot_interface &device)
@@ -336,6 +338,7 @@ void apple2gs_cards(device_slot_interface &device)
 	device.option_add("ieee488", A2BUS_IEEE488);               // Apple II IEEE-488 Interface Card
 	device.option_add("ap2", A2BUS_IBSAP2);                    // IBS Computertechnik AP 2 Serial Interface
 	device.option_add("sweetalk", A2BUS_SWEETALK);             // Micromint Sweet Talker Phonetic Speech Synthesizer Interface
+	device.option_add("retronet", A2BUS_A2RETRONET);           // A2retroNET SmartPort Card
 }
 
 void apple3_cards(device_slot_interface &device)
