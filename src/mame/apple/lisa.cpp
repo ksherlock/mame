@@ -665,7 +665,12 @@ static INPUT_PORTS_START( lisa )
 	PORT_BIT(1, IP_ACTIVE_LOW, IPT_UNUSED)
 	PORT_BIT(2, IP_ACTIVE_LOW, IPT_UNUSED)
 	PORT_BIT(4, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_CODE(KEYCODE_O)             PORT_CHAR('o') PORT_CHAR('O')
+
+#ifdef AMPLE
+	PORT_BIT(8, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Command") PORT_CODE(KEYCODE_LWIN) PORT_CODE(KEYCODE_RWIN)
+#else
 	PORT_BIT(8, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Command") PORT_CODE(KEYCODE_LCONTROL)                 PORT_CHAR(UCHAR_SHIFT_2)
+#endif
 INPUT_PORTS_END
 
 	/* Note we're missing a whole bunch of lisa bootrom revisions; based on http://www.cs.dartmouth.edu/~woz/bootrom.pdf :
