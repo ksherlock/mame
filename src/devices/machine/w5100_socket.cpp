@@ -38,8 +38,9 @@
 #define LOG_TCP     (1U << 2)
 #define LOG_SR      (1U << 3)
 #define LOG_SEND    (1U << 4)
+#define LOG_TX_RX   (1U << 5)
 
-#define VERBOSE (LOG_GENERAL|LOG_COMMAND|LOG_TCP|LOG_SR|LOG_SEND)
+#define VERBOSE (LOG_GENERAL|LOG_COMMAND|LOG_TCP|LOG_SR|LOG_SEND|LOG_TX_RX)
 #include "logmacro.h"
 
 
@@ -346,11 +347,13 @@ TIMER_CALLBACK_MEMBER(w5100_socket_device::resend_timer)
 				case Sn_MR_UDP:
 					m_tx_rd = m_tx_wr;
 					m_sr = Sn_SR_UDP;
+					LOGMASKED(LOG_TX_RX, "m_tx_rd set to %04x\n", m_tx_rd);
 					LOGMASKED(LOG_SR, "Socket -> %s\n", sr_to_cstring(m_sr));
 					break;
 				case Sn_MR_IPRAW:
 					m_tx_rd = m_tx_wr;
 					m_sr = Sn_SR_IPRAW;
+					LOGMASKED(LOG_TX_RX, "m_tx_rd set to %04x\n", m_tx_rd);
 					LOGMASKED(LOG_SR, "Socket -> %s\n", sr_to_cstring(m_sr));
 					break;
 				case Sn_MR_TCP:
@@ -539,11 +542,13 @@ void w5100_socket_device::write_register(offs_t offset, uint8_t data)
 		case Sn_TX_WR0:
 		case Sn_TX_WR1:
 			util::big_endian_cast<uint8_t>(&m_pending_tx_wr)[offset - Sn_TX_WR0] = data;
+			LOGMASKED(LOG_TX_RX, "pending_tx_wr set to %04x\n", m_pending_tx_wr);
 			break;
 
 		case Sn_RX_RD0:
 		case Sn_RX_RD1:
 			util::big_endian_cast<uint8_t>(&m_pending_rx_rd)[offset - Sn_RX_RD0] = data;
+			LOGMASKED(LOG_TX_RX, "m_pending_rx_rd set to %04x\n", m_pending_rx_rd);
 			break;
 
 		// read-only registers
@@ -766,7 +771,6 @@ void w5100_socket_device::command_open()
 	m_rx_wr = 0;
 	m_tx_rd = 0;
 	m_tx_wr = 0;
-	m_pending_tx_wr = 0;
 
 	m_snd_una = 0;
 	m_snd_nxt = 0;
@@ -839,6 +843,7 @@ void w5100_socket_device::intern_connect()
 	m_snd_una = m_iss;
 	m_snd_nxt = m_iss + 1;
 	m_tx_rd = (uint32_t)m_snd_nxt;
+	LOGMASKED(LOG_TX_RX, "m_tx_rd set to %04x\n", m_tx_rd);
 
 	tcp_send_segment(TCP_SYN, m_iss, 0);
 	m_sr = Sn_SR_SYNSENT;
@@ -887,6 +892,7 @@ void w5100_socket_device::command_recv()
 {
 
 	m_rx_rd = m_pending_rx_rd;
+	LOGMASKED(LOG_TX_RX, "m_rx_rd set to %04x\n", m_rx_rd);
 
 	uint16_t size = m_rx_wr - m_rx_rd;
 
@@ -927,6 +933,7 @@ void w5100_socket_device::command_send()
 	}
 
 	m_tx_wr = m_pending_tx_wr;
+	LOGMASKED(LOG_TX_RX, "m_tx_wr set to %04x\n", m_tx_wr);
 
 	// UDP or IPRAW may been an arp
 	if (m_sr == Sn_SR_UDP || m_sr == Sn_SR_IPRAW)
@@ -942,6 +949,7 @@ void w5100_socket_device::command_send_mac()
 		return;
 
 	m_tx_wr = m_pending_tx_wr;
+	LOGMASKED(LOG_TX_RX, "m_tx_wr set to %04x\n", m_tx_wr);
 
 	// update the registers.
 	std::memcpy(m_dhar, m_pending_dhar, 6);
@@ -1003,6 +1011,8 @@ void w5100_socket_device::intern_send()
 		m_parent->build_udp_header(frame, m_dhar, ip, udp, msize);
 
 		m_tx_rd += msize;
+		LOGMASKED(LOG_TX_RX, "m_tx_rd set to %04x\n", m_tx_rd);
+
 		m_parent->send(frame, msize + header_size);
 		LOGMASKED(LOG_SEND, "Sending %u bytes to %s (UDP)\n", msize + header_size, ip_to_string(m_dipr, m_dport));
 		if (size == msize)
@@ -1035,6 +1045,8 @@ void w5100_socket_device::intern_send()
 
 		}
 		m_tx_rd = m_tx_wr;
+		LOGMASKED(LOG_TX_RX, "m_tx_rd set to %04x\n", m_tx_rd);
+
 		m_ir |= Sn_IR_SEND_OK;
 		m_parent->update_ethernet_irq();
 	}
@@ -1175,11 +1187,13 @@ bool w5100_socket_device::intern_recv(const uint8_t *header, int header_size, co
 	{
 		m_parent->copy_to_rx_buffer(m_sn, m_rx_wr, header, header_size);
 		m_rx_wr += header_size;
+		LOGMASKED(LOG_TX_RX, "m_rx_wr set to %04x\n", m_rx_wr);
 	}
 	if (payload_size)
 	{
 		m_parent->copy_to_rx_buffer(m_sn, m_rx_wr, payload, payload_size);
 		m_rx_wr += payload_size;
+		LOGMASKED(LOG_TX_RX, "m_rx_wr set to %04x\n", m_rx_wr);
 	}
 
 	if (m_active_proto == Sn_MR_TCP)
@@ -1302,6 +1316,8 @@ bool w5100_socket_device::process_tcp(const uint8_t *mac, const wiznet_ip_info &
 			m_snd_una = m_iss;
 
 			m_tx_rd = (uint32_t)m_snd_nxt;
+			LOGMASKED(LOG_TX_RX, "m_tx_rd set to %04x\n", m_tx_rd);
+
 			m_dport = tcp.src_port;
 			m_dipr = ip.src_ip;
 			std::memcpy(m_dhar, mac, 6);
@@ -1385,6 +1401,7 @@ void w5100_socket_device::tcp_process_segment(const wiznet_tcp_info &tcp, const 
 				m_snd_wl2 = seg_ack;
 
 				m_tx_wr = (uint32_t)m_snd_nxt;
+				LOGMASKED(LOG_TX_RX, "m_tx_wr set to %04x\n", m_tx_wr);
 
 				if (seg_len)
 					intern_recv(seg_data, seg_len);
@@ -1462,6 +1479,9 @@ void w5100_socket_device::tcp_process_segment(const wiznet_tcp_info &tcp, const 
 				m_snd_wl2 = seg_ack;
 
 				m_snd_una = seg_ack;
+
+				m_tx_wr = (uint32_t)m_snd_nxt;
+				LOGMASKED(LOG_TX_RX, "m_tx_wr set to %04x\n", m_tx_wr);
 
 				m_sr = Sn_SR_ESTABLISHED;
 				LOGMASKED(LOG_SR, "Socket -> %s\n", sr_to_cstring(m_sr));
@@ -1743,6 +1763,8 @@ void w5100_socket_device::tcp_send(bool retransmit)
 			if (fin) ++m_snd_nxt;
 
 			m_tx_rd = m_tx_wr;
+			LOGMASKED(LOG_TX_RX, "m_tx_rd set to %04x\n", m_tx_rd);
+
 			m_ir |= Sn_IR_SEND_OK;
 			m_parent->update_ethernet_irq();
 
