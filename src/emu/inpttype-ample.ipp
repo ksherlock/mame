@@ -105,14 +105,13 @@ namespace {
 		INPUT_PORT_DIGITAL_TYPE(  1, PLAYER1,  GAMBLE_KEYOUT,       N_p("input-name", "Key Out"),                input_seq(KEYCODE_W) ) \
 		INPUT_PORT_DIGITAL_TYPE(  1, PLAYER1,  GAMBLE_SERVICE,      N_p("input-name", "Service"),                input_seq(KEYCODE_9) ) \
 		INPUT_PORT_DIGITAL_TYPE(  1, PLAYER1,  GAMBLE_BOOK,         N_p("input-name", "Book-Keeping"),           input_seq(KEYCODE_0) ) \
-		INPUT_PORT_DIGITAL_TYPE(  1, PLAYER1,  GAMBLE_DOOR,         N_p("input-name", "Door"),                   input_seq(KEYCODE_O) ) \
-		INPUT_PORT_DIGITAL_TYPE(  1, PLAYER1,  GAMBLE_PAYOUT,       N_p("input-name", "Payout"),                 input_seq(KEYCODE_I) ) \
+		INPUT_PORT_DIGITAL_TYPE(  1, PLAYER1,  GAMBLE_PAYOUT,       N_p("input-name", "Payout"),                 input_seq(KEYCODE_4) ) \
 		INPUT_PORT_DIGITAL_TYPE(  1, PLAYER1,  GAMBLE_BET,          N_p("input-name", "Bet"),                    input_seq(KEYCODE_M) ) \
 		INPUT_PORT_DIGITAL_TYPE(  1, PLAYER1,  GAMBLE_DEAL,         N_p("input-name", "Deal"),                   input_seq(KEYCODE_2) ) \
 		INPUT_PORT_DIGITAL_TYPE(  1, PLAYER1,  GAMBLE_STAND,        N_p("input-name", "Stand"),                  input_seq(KEYCODE_L) ) \
-		INPUT_PORT_DIGITAL_TYPE(  1, PLAYER1,  GAMBLE_TAKE,         N_p("input-name", "Take Score"),             input_seq(KEYCODE_4) ) \
-		INPUT_PORT_DIGITAL_TYPE(  1, PLAYER1,  GAMBLE_D_UP,         N_p("input-name", "Double Up"),              input_seq(KEYCODE_3) ) \
-		INPUT_PORT_DIGITAL_TYPE(  1, PLAYER1,  GAMBLE_HALF,         N_p("input-name", "Half Gamble"),            input_seq(KEYCODE_D) ) \
+		INPUT_PORT_DIGITAL_TYPE(  1, PLAYER1,  GAMBLE_TAKE,         N_p("input-name", "Take Score"),             input_seq(KEYCODE_G) ) \
+		INPUT_PORT_DIGITAL_TYPE(  1, PLAYER1,  GAMBLE_D_UP,         N_p("input-name", "Double Up"),              input_seq(KEYCODE_D) ) \
+		INPUT_PORT_DIGITAL_TYPE(  1, PLAYER1,  GAMBLE_HALF,         N_p("input-name", "Half Gamble"),            input_seq(KEYCODE_F) ) \
 		INPUT_PORT_DIGITAL_TYPE(  1, PLAYER1,  GAMBLE_HIGH,         N_p("input-name", "High"),                   input_seq(KEYCODE_A) ) \
 		INPUT_PORT_DIGITAL_TYPE(  1, PLAYER1,  GAMBLE_LOW,          N_p("input-name", "Low"),                    input_seq(KEYCODE_S) ) \
 		CORE_INPUT_TYPES_END()
@@ -133,6 +132,7 @@ namespace {
 		INPUT_PORT_DIGITAL_TYPE(  1, PLAYER1,  SLOT_STOP2,          N_p("input-name", "Stop Reel 2"),            input_seq(KEYCODE_C) ) \
 		INPUT_PORT_DIGITAL_TYPE(  1, PLAYER1,  SLOT_STOP3,          N_p("input-name", "Stop Reel 3"),            input_seq(KEYCODE_V) ) \
 		INPUT_PORT_DIGITAL_TYPE(  1, PLAYER1,  SLOT_STOP4,          N_p("input-name", "Stop Reel 4"),            input_seq(KEYCODE_B) ) \
+		INPUT_PORT_DIGITAL_TYPE(  1, PLAYER1,  SLOT_STOP5,          N_p("input-name", "Stop Reel 5"),            input_seq(KEYCODE_N) ) \
 		INPUT_PORT_DIGITAL_TYPE(  1, PLAYER1,  SLOT_STOP_ALL,       N_p("input-name", "Stop All Reels"),         input_seq(KEYCODE_Z) ) \
 		CORE_INPUT_TYPES_END()
 
@@ -187,7 +187,7 @@ namespace {
 		INPUT_PORT_DIGITAL_TYPE(  2, PLAYER2,  MAHJONG_M,           N_p("input-name", "%p Mahjong M"),           input_seq(KEYCODE_M_INDEXED(1)) ) \
 		INPUT_PORT_DIGITAL_TYPE(  2, PLAYER2,  MAHJONG_N,           N_p("input-name", "%p Mahjong N"),           input_seq(KEYCODE_N_INDEXED(1)) ) \
 		INPUT_PORT_DIGITAL_TYPE(  2, PLAYER2,  MAHJONG_O,           N_p("input-name", "%p Mahjong O"),           input_seq(KEYCODE_O_INDEXED(1)) ) \
-		INPUT_PORT_DIGITAL_TYPE(  2, PLAYER2,  MAHJONG_P,           N_p("input-name", "%p Mahjong P"),           input_seq(KEYCODE_COLON_INDEXED(1)) ) \
+		INPUT_PORT_DIGITAL_TYPE(  2, PLAYER2,  MAHJONG_P,           N_p("input-name", "%p Mahjong P"),           input_seq(KEYCODE_P_INDEXED(1)) ) \
 		INPUT_PORT_DIGITAL_TYPE(  2, PLAYER2,  MAHJONG_Q,           N_p("input-name", "%p Mahjong Q"),           input_seq(KEYCODE_Q_INDEXED(1)) ) \
 		INPUT_PORT_DIGITAL_TYPE(  2, PLAYER2,  MAHJONG_KAN,         N_p("input-name", "%p Mahjong Kan"),         input_seq(KEYCODE_LCONTROL_INDEXED(1)) ) \
 		INPUT_PORT_DIGITAL_TYPE(  2, PLAYER2,  MAHJONG_PON,         N_p("input-name", "%p Mahjong Pon"),         input_seq(KEYCODE_LALT_INDEXED(1)) ) \
@@ -592,21 +592,13 @@ namespace {
 		INPUT_PORT_DIGITAL_TYPE(  0, OTHER,    SERVICE4,            N_p("input-name", "Service 4"),              input_seq(KEYCODE_EQUALS) ) \
 		CORE_INPUT_TYPES_END()
 
-#define CORE_INPUT_TYPES_TILT \
-		CORE_INPUT_TYPES_BEGIN(tilt) \
-		INPUT_PORT_DIGITAL_TYPE(  0, OTHER,    TILT1,               N_p("input-name", "Tilt 1"),                 input_seq(KEYCODE_T) ) \
-		INPUT_PORT_DIGITAL_TYPE(  0, OTHER,    TILT2,               N_p("input-name", "Tilt 2"),                 input_seq() ) \
-		INPUT_PORT_DIGITAL_TYPE(  0, OTHER,    TILT3,               N_p("input-name", "Tilt 3"),                 input_seq() ) \
-		INPUT_PORT_DIGITAL_TYPE(  0, OTHER,    TILT4,               N_p("input-name", "Tilt 4"),                 input_seq() ) \
-		CORE_INPUT_TYPES_END()
-
 #define CORE_INPUT_TYPES_OTHER \
 		CORE_INPUT_TYPES_BEGIN(other) \
 		INPUT_PORT_DIGITAL_TYPE(  0, OTHER,    POWER_ON,            N_p("input-name", "Power On"),               input_seq(KEYCODE_F1) ) \
 		INPUT_PORT_DIGITAL_TYPE(  0, OTHER,    POWER_OFF,           N_p("input-name", "Power Off"),              input_seq(KEYCODE_F2) ) \
 		INPUT_PORT_DIGITAL_TYPE(  0, OTHER,    SERVICE,             N_p("input-name", "Service"),                input_seq(KEYCODE_F2) ) \
 		INPUT_PORT_DIGITAL_TYPE(  0, OTHER,    TILT,                N_p("input-name", "Tilt"),                   input_seq(KEYCODE_T) ) \
-		INPUT_PORT_DIGITAL_TYPE(  0, OTHER,    INTERLOCK,           N_p("input-name", "Door Interlock"),         input_seq() ) \
+		INPUT_PORT_DIGITAL_TYPE(  0, OTHER,    DOOR,                N_p("input-name", "Door Interlock"),         input_seq(KEYCODE_O) ) \
 		INPUT_PORT_DIGITAL_TYPE(  0, OTHER,    MEMORY_RESET,        N_p("input-name", "Memory Reset"),           input_seq(KEYCODE_F1) ) \
 		INPUT_PORT_DIGITAL_TYPE(  0, OTHER,    VOLUME_DOWN,         N_p("input-name", "Volume Down"),            input_seq(KEYCODE_MINUS) ) \
 		INPUT_PORT_DIGITAL_TYPE(  0, OTHER,    VOLUME_UP,           N_p("input-name", "Volume Up"),              input_seq(KEYCODE_EQUALS) ) \
@@ -1003,7 +995,6 @@ CORE_INPUT_TYPES_P10
 CORE_INPUT_TYPES_START
 CORE_INPUT_TYPES_COIN
 CORE_INPUT_TYPES_SERVICE
-CORE_INPUT_TYPES_TILT
 CORE_INPUT_TYPES_OTHER
 CORE_INPUT_TYPES_PEDAL
 CORE_INPUT_TYPES_PEDAL2
@@ -1063,7 +1054,6 @@ constexpr size_t core_input_types_count()
 			CORE_INPUT_TYPES_START
 			CORE_INPUT_TYPES_COIN
 			CORE_INPUT_TYPES_SERVICE
-			CORE_INPUT_TYPES_TILT
 			CORE_INPUT_TYPES_OTHER
 			CORE_INPUT_TYPES_PEDAL
 			CORE_INPUT_TYPES_PEDAL2
@@ -1121,7 +1111,6 @@ ATTR_COLD inline void emplace_core_types(std::vector<input_type_entry> &typelist
 	emplace_core_types_start(typelist);
 	emplace_core_types_coin(typelist);
 	emplace_core_types_service(typelist);
-	emplace_core_types_tilt(typelist);
 	emplace_core_types_other(typelist);
 	emplace_core_types_pedal(typelist);
 	emplace_core_types_pedal2(typelist);
