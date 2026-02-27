@@ -416,6 +416,17 @@ project ("osd_" .. _OPTIONS["osd"])
 		MAME_DIR .. "src/osd/sdl3/window.h",
 	}
 
+	-- ample
+	if _OPTIONS["targetos"]=="macosx" then
+		files {
+			MAME_DIR .. "src/osd/sdl3/ample.mm",
+		}
+		includedirs {
+			MAME_DIR .. "src/frontend/mame",
+		}
+	end
+
+
 project ("ocore_" .. _OPTIONS["osd"])
 	uuid (os.uuid("ocore_" .. _OPTIONS["osd"]))
 	kind (LIBTYPE)
