@@ -1021,6 +1021,7 @@ end
 				"-Wno-unused-value",
 				"-Wno-unused-const-variable",
 				"-Wno-xor-used-as-pow", -- clang 10.0 complains that expressions like 10 ^ 7 look like exponention
+				"-Wno-deprecated-anon-enum-enum-conversion",
 			}
 			if version >= 140000 then
 				buildoptions {

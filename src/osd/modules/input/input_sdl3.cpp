@@ -587,12 +587,12 @@ public:
 					m_capslock_pressed = std::chrono::steady_clock::now();
 
 #ifdef AMPLE
-			/* ignore option-command-alpha menu items */
-			/* GSBug uses control-option-command-esc  */
-			if (m_keyboard.state[SDL_SCANCODE_LALT] && m_keyboard.state[SDL_SCANCODE_LGUI]
-				&& event.key.scancode < SDL_SCANCODE_CAPSLOCK
-				&& event.key.scancode != SDL_SCANCODE_ESCAPE)
-				break;
+				/* ignore option-command-alpha menu items */
+				/* GSBug uses control-option-command-esc  */
+				if (m_keyboard.state[SDL_SCANCODE_LALT] && m_keyboard.state[SDL_SCANCODE_LGUI]
+					&& event.key.scancode < SDL_SCANCODE_CAPSLOCK
+					&& event.key.scancode != SDL_SCANCODE_ESCAPE)
+					break;
 #endif
 
 				m_keyboard.state[event.key.scancode] = 0x80;
