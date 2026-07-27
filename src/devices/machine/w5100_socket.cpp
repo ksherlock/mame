@@ -33,6 +33,9 @@
 #include "w5100_socket.h"
 #include "util/endianness.h"
 
+#include <bit>
+
+
 // #define LOG_GENERAL (1U << 0)
 #define LOG_COMMAND (1U << 1)
 #define LOG_TCP     (1U << 2)
@@ -1132,7 +1135,7 @@ void w5100_socket_device::tcp_update_timer()
 {
 	auto rtr = m_parent->rtr();
 
-	const auto max_shift = count_leading_zeros_32(rtr) - 16;
+	const auto max_shift = std::countl_zero<uint16_t>(rtr);
 
 	rtr <<= std::min((int)m_current_rcr, max_shift);
 

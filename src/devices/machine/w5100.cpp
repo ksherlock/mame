@@ -38,6 +38,7 @@
 #include "machine/w5100.h"
 #include "machine/w5100_socket.h"
 #include "util/internet_checksum.h"
+#include "endianness.h"
 #include "multibyte.h"
 
 // #define LOG_GENERAL (1U << 0)
@@ -539,7 +540,7 @@ void w5100_device::update_ethernet_irq()
 	m_ir &= 0b11100000;
 
 	unsigned bit = 0x01;
-	for (auto socket : m_sockets)
+	for (auto &socket : m_sockets)
 	{
 		if (socket->ir()) m_ir |= bit;
 		bit <<= 1;
@@ -923,7 +924,7 @@ void w5100_device::send_complete_cb(int result)
 		return;
 	}
 
-	for (auto socket : m_sockets)
+	for (auto &socket : m_sockets)
 	{
 		socket->process_pending();
 		if (busy())
@@ -981,7 +982,7 @@ void w5100_device::recv_cb(uint8_t *buffer, int length)
 			auto udp = parse_udp(data, data_length);
 			data += udp.header_length;
 			data_length = udp.udp_length - udp.header_length;
-			for (auto socket : m_sockets)
+			for (auto &socket : m_sockets)
 			{
 				if (socket->process_udp(eth.src_mac, ip, udp, data, data_length))
 					return;
@@ -1001,7 +1002,7 @@ void w5100_device::recv_cb(uint8_t *buffer, int length)
 			data += tcp.header_length;
 			data_length -= tcp.header_length;
 
-			for (auto socket : m_sockets)
+			for (auto &socket : m_sockets)
 			{
 				if (socket->process_tcp(eth.src_mac, ip, tcp, data, data_length))
 					return;
@@ -1015,7 +1016,7 @@ void w5100_device::recv_cb(uint8_t *buffer, int length)
 		}
 
 		// ipraw takes precedence over icmp and igmp
-		for (auto socket : m_sockets)
+		for (auto &socket : m_sockets)
 		{
 			if (socket->process_ipraw(eth.src_mac, ip, data, data_length))
 				return;
@@ -1043,7 +1044,7 @@ void w5100_device::recv_cb(uint8_t *buffer, int length)
 
 			if (type == IGMP_TYPE_MEMBERSHIP_QUERY)
 			{
-				for (auto socket : m_sockets)
+				for (auto &socket : m_sockets)
 				{
 					socket->process_igmp_query(ip);
 				}
@@ -1180,7 +1181,7 @@ void w5100_device::process_arp_reply(const uint8_t *arp, int length)
 
 	LOGMASKED(LOG_ARP, "Received ARP response for %s\n", ip_to_string(ip));
 
-	for (auto socket: m_sockets)
+	for (auto &socket : m_sockets)
 		socket->process_arp_reply(mac, ip);
 }
 
